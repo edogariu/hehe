@@ -32,7 +32,7 @@ class Trainer():
             how many epochs between each decay step for each model
         lr_decay_gammas : Dict[str, float]
             size of each decay step for each model
-        e : Dict[str, float]
+        weight_decays : Dict[str, float]
             l2 regularization for each model
         """
         
