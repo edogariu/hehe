@@ -2,7 +2,7 @@
 This is code for **da pengster** (bio ML stuffs)
 
 The framework for this project is that we are given two datasets:
-1. coupled single-cell measurements of the form `(DNA, RNA)`, where `DNA` is short for a ~220k dimensional vector of ATAC-seq chromatin accessibility measurements for 220k genes and `RNA` is a ~24k vector of measured gene expression
+1. coupled single-cell measurements of the form `(DNA, RNA)`, where `DNA` is a ~220k dimensional vector of ATAC-seq chromatin accessibility measurements for 220k genes and `RNA` is a ~24k vector of measured gene expression
 2. coupled single-cell measurements of the form `(RNA, protein)`, where `RNA` is defined as before and `protein` is a 140 dimensional vector of surface level protein measurements for 140 different proteins
 
 ## Table of Contents
