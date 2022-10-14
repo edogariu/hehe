@@ -187,10 +187,10 @@ class JEPA():
         float
             loss
         """
-        out = self._infer(x, day)
-        error = F.mse_loss(out, y).item()
+        # out = self._infer(x, day)
+        # error = F.mse_loss(out, y).item()
         loss = self.loss(x, day, y)
-        return error, loss
+        return loss.item(), loss
     
     def __str__(self) -> str:
         s = 'Joint Embedding (Predictive) Architecture with the following models:\n'
@@ -200,8 +200,8 @@ class JEPA():
     
     def load_checkpoint(self):
         for k in self._models:
-            model_filename = TOP_DIR_NAME + '/checkpoints/models/{}.pth'.format(k)
-            opt_filename = TOP_DIR_NAME + '/checkpoints/optimizers/{}.pth'.format(k)
+            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
+            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
             
             assert os.path.isfile(model_filename) and os.path.isfile(opt_filename)
 
@@ -210,8 +210,8 @@ class JEPA():
     
     def save_checkpoint(self):
         for k in self._models:
-            model_filename = TOP_DIR_NAME + '/checkpoints/models/{}.pth'.format(k)
-            opt_filename = TOP_DIR_NAME + '/checkpoints/optimizers/{}.pth'.format(k)
+            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
+            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
 
             torch.save(self._models[k].state_dict(), model_filename)
             torch.save(self._optimizers[k].state_dict(), opt_filename)

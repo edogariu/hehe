@@ -7,13 +7,12 @@ import numpy as np
 
 TOP_DIR_NAME = os.path.dirname(os.path.abspath(__file__))
 
-METADATA = pd.read_csv(os.path.join(TOP_DIR_NAME, 'data/metadata.csv')) 
+METADATA = pd.read_csv(os.path.join(TOP_DIR_NAME, 'data', 'metadata.csv')) 
 METADATA.set_index('cell_id', inplace=True) # index metadata by cell id
 
-SPLIT_INTERVALS = {'train': (0, 0.7),  # intervals for each split
-                   'val': (0.7, 0.9),
-                   'test': (0.9, 1.0),
-                   'all': (0.0, 1.0)}
+SPLIT_INTERVALS = {'train': (0, 0.8),  # intervals for each split
+                   'val': (0.8, 0.95),
+                   'test': (0.95, 1.0)}
 
 class H5Dataset(D.Dataset):
     """
@@ -26,7 +25,7 @@ class H5Dataset(D.Dataset):
         Parameters
         ----------
         split : str
-            which split to use. must be one of `['train', 'val', 'test', 'all']`
+            which split to use. must be one of `['train', 'val', 'test']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         n_data : int
@@ -36,7 +35,7 @@ class H5Dataset(D.Dataset):
         """
         super(D.Dataset, self).__init__()
         
-        assert split in ['train', 'val', 'test', 'all']
+        assert split in ['train', 'val', 'test']
         assert mode in ['multi', 'cite']
         for d in days: assert d in [2, 3, 4, 7]
         
@@ -44,19 +43,19 @@ class H5Dataset(D.Dataset):
         self.mode = mode
         self.days = days
         
-        inputs_file = os.path.join(TOP_DIR_NAME, f'data/train_{mode}_inputs.h5')
+        inputs_file = os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_inputs.h5')
         assert os.path.isfile(inputs_file)
-        self.inputs_h5 = h5py.File(inputs_file, 'r')[inputs_file.split('.')[0].split('/')[-1]]
+        self.inputs_h5 = h5py.File(inputs_file, 'r')[os.path.split(inputs_file)[1].split('.')[0]]
         
         # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
-        ids = np.array(self.inputs_h5['axis1'], dtype=str)
+        ids = np.array(self.inputs_h5['axis1']).astype(str)
         self.metadata = METADATA.loc[ids]
                 
         self.inputs_h5 = self.inputs_h5['block0_values']
         
-        targets_file = os.path.join(TOP_DIR_NAME, f'data/train_{mode}_targets.h5')
+        targets_file = os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_targets.h5')
         assert os.path.isfile(targets_file)
-        self.targets_h5 = h5py.File(targets_file, 'r')[targets_file.split('.')[0].split('/')[-1]]['block0_values']
+        self.targets_h5 = h5py.File(targets_file, 'r')[os.path.split(targets_file)[1].split('.')[0]]['block0_values']
         assert len(self.inputs_h5) == len(self.targets_h5), 'inputs and targets arent same size??'
                 
         # create correct split       
@@ -119,15 +118,15 @@ class SparseDataset(D.Dataset):
         self.mode = mode
         self.days = days
         
-        inputs_file = os.path.join(TOP_DIR_NAME, f'data_sparse/train_{mode}_inputs_sparse.npz')
+        inputs_file = os.path.join(TOP_DIR_NAME, 'data_sparse', f'train_{mode}_inputs_sparse.npz')
         assert os.path.isfile(inputs_file)
         self.inputs_npz = ss.load_npz(inputs_file)
         
         # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
-        ids = np.array(h5py.File(os.path.join(TOP_DIR_NAME, f'data/train_{mode}_inputs.h5'), 'r')[f'train_{mode}_inputs']['axis1'], dtype=str)
+        ids = np.array(h5py.File(os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_inputs.h5'), 'r')[f'train_{mode}_inputs']['axis1'], dtype=str)
         self.metadata = METADATA.loc[ids]
         
-        targets_file = os.path.join(TOP_DIR_NAME, f'data_sparse/train_{mode}_targets_sparse.npz')
+        targets_file = os.path.join(TOP_DIR_NAME, 'data_sparse', f'train_{mode}_targets_sparse.npz')
         assert os.path.isfile(targets_file)
         self.targets_npz = ss.load_npz(targets_file)
         assert self.inputs_npz.shape[0] == self.targets_npz.shape[0], 'inputs and targets arent same size??'
