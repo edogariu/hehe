@@ -92,7 +92,7 @@ class Trainer():
                 
                 err, loss = self.jepa.eval_err(x, day, y)
                 errs.append(err)
-                losses.append(loss.item())
+                losses.append(loss)
 
         avg_err = np.mean(errs)
         avg_loss = np.mean(losses)

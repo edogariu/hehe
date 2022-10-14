@@ -156,11 +156,19 @@ class JEPA():
         torch.tensor
             loss
         """
+        reconstruction_weight = 0.5
+        prediction_weight = 1.0
+        
+        loss = 0
         enc = self._in_encoder(x, day)
+        if self._in_decoder:
+            reconstructed = self._in_decoder(enc, day)
+            loss += reconstruction_weight * F.mse_loss(reconstructed, x)
         if self._predictor:
             enc = self._predictor(enc, day)
-        out = self._out_decoder(enc, day)
-        return F.mse_loss(out, y)
+        pred = self._out_decoder(enc, day)
+        loss += prediction_weight * F.mse_loss(pred, y)
+        return loss
     
     def eval_err(self, 
                  x: torch.tensor, 
@@ -187,10 +195,10 @@ class JEPA():
         float
             loss
         """
-        # out = self._infer(x, day)
-        # error = F.mse_loss(out, y).item()
-        loss = self.loss(x, day, y)
-        return loss.item(), loss
+        out = self.infer(x, day)
+        error = F.mse_loss(out, y).item()
+        # loss = self.loss(x, day, y)
+        return error, error
     
     def __str__(self) -> str:
         s = 'Joint Embedding (Predictive) Architecture with the following models:\n'
