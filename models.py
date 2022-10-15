@@ -73,37 +73,6 @@ class LinearCoder(UsesDays):
             outs.append(self.models[str(d.item())](h.unsqueeze(0)))
         return torch.cat(outs, dim=0)
     
-      
-# class LinearCoder(UsesDays):
-#     def __init__(self, 
-#                  layer_dims: List[int], 
-#                  emb_dim: int, 
-#                  use_ss_norm: bool, 
-#                  dropout: float,
-#                  input_2d: bool):
-#         super(LinearCoder, self).__init__()
-        
-#         self.in_dim = layer_dims[0]
-#         self.out_dim = layer_dims[-1]
-        
-#         self.day_embed = nn.Sequential(
-#             nn.Linear(self.in_dim, emb_dim),
-#             ACTIVATION(),
-#             nn.Linear(emb_dim, emb_dim)
-#         )
-#         self.blocks = []
-#         for i in range(len(layer_dims) - 1):
-#             in_dim = layer_dims[i]
-#             out_dim = layer_dims[i + 1]
-#             self.blocks.append(LinearBlock(in_dim, out_dim, emb_dim, use_ss_norm, dropout, input_2d))
-#         self.blocks = UsesDaysSequential(*self.blocks)
-        
-#     def forward(self, x, day):
-#         emb = self.day_embed(timestep_embedding(day, self.in_dim))
-#         emb += torch.randn_like(emb) / 500  # jiggle around day embeddings so that model doesn't get too used to same numbers
-#         h = x
-#         h = self.blocks(h, emb)
-#         return h
     
 class Encoder(UsesDays):
     """
@@ -307,7 +276,7 @@ class Decoder(UsesDays):
 
 class LinearBlock(nn.Module):
     """
-    Uses no embedding. One different model for each day
+    Uses no embedding
     """
     def __init__(self, 
                  in_dim: int, 
@@ -316,8 +285,8 @@ class LinearBlock(nn.Module):
                  input_2d: bool):
         super(LinearBlock, self).__init__()
                 
-        self.in_linear = nn.Conv1d(in_dim, in_dim, 1) if input_2d else nn.Linear(in_dim, in_dim)
-        self.out_linear = nn.Conv1d(in_dim, out_dim, 1) if input_2d else nn.Linear(in_dim, out_dim)
+        self.in_linear = nn.Conv1d(in_dim, out_dim, 1) if input_2d else nn.Linear(in_dim, out_dim)
+        self.out_linear = nn.Conv1d(out_dim, out_dim, 1) if input_2d else nn.Linear(out_dim, out_dim)
         
         self.activation = ACTIVATION()
         self.out_norm = ChannelNorm(out_dim) if input_2d else nn.LayerNorm(out_dim)
@@ -326,56 +295,13 @@ class LinearBlock(nn.Module):
 
     def forward(self, x):
         h = x
-        h = self.activation(x + self.in_linear(h))
+        h = self.activation(self.in_linear(h))
         h = self.out_norm(h)
         h = self.dropout(h)
         h = self.out_linear(h)
         
         return h
-
-# class LinearBlock(UsesDays):
-#     """
-#     Uses embedding addition. could switch to embedding concatenation
-#     """
-#     def __init__(self, 
-#                  in_dim: int, 
-#                  out_dim: int, 
-#                  emb_dim: int, 
-#                  use_ss_norm: bool, 
-#                  dropout: float,
-#                  input_2d: bool):
-#         super(LinearBlock, self).__init__()
-        
-#         self.ss = use_ss_norm
-#         self.emb = nn.Linear(emb_dim, out_dim * 2) if self.ss else nn.Linear(emb_dim, out_dim)
-#         self.in_linear = nn.Conv1d(in_dim, out_dim, 1) if input_2d else nn.Linear(in_dim, out_dim)
-#         self.out_linear = nn.Conv1d(in_dim, out_dim, 1) if input_2d else nn.Linear(out_dim, out_dim)
-        
-#         self.activation = ACTIVATION()
-#         self.out_norm = ChannelNorm(out_dim) if input_2d else nn.LayerNorm(out_dim)
-        
-#         self.dropout = nn.Dropout(dropout)
-
-#     def forward(self, x, day):
-#         h = x
-#         h = self.activation(self.in_linear(h))
-        
-#         # add in day embedding
-#         embedding = self.emb(day).squeeze(1)
-#         if self.ss:
-#             # [y_s, y_b] = y
-#             scale, shift = torch.chunk(embedding, 2, dim=1)
-#             # AdaGN(h, y) = y_s * GroupNorm(h) + y_b
-#             h = self.out_norm(h) * (1 + scale) + shift
-#         else:
-#             h += embedding
-#             h = self.out_norm(h)
-#         h = self.activation(h)
-#         h = self.dropout(h)
-#         h = self.out_linear(h)
-        
-#         return h
-    
+   
 class ConvBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, dilation: int):
         super(ConvBlock, self).__init__()
