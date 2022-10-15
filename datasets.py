@@ -12,7 +12,8 @@ METADATA.set_index('cell_id', inplace=True) # index metadata by cell id
 
 SPLIT_INTERVALS = {'train': (0, 0.8),  # intervals for each split
                    'val': (0.8, 0.95),
-                   'test': (0.95, 1.0)}
+                   'test': (0.95, 1.0),
+                   'all': (0, 1.0)}
 
 class H5Dataset(D.Dataset):
     """
@@ -25,7 +26,7 @@ class H5Dataset(D.Dataset):
         Parameters
         ----------
         split : str
-            which split to use. must be one of `['train', 'val', 'test']`
+            which split to use. must be one of `['train', 'val', 'test', 'all']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         n_data : int
@@ -35,7 +36,7 @@ class H5Dataset(D.Dataset):
         """
         super(D.Dataset, self).__init__()
         
-        assert split in ['train', 'val', 'test']
+        assert split in ['train', 'val', 'test', 'all']
         assert mode in ['multi', 'cite']
         for d in days: assert d in [2, 3, 4, 7]
         
@@ -101,7 +102,7 @@ class SparseDataset(D.Dataset):
         Parameters
         ----------
         split : str
-            which split to use. must be one of `['train', 'val', 'test']`
+            which split to use. must be one of `['train', 'val', 'test', 'all']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         n_data : int
@@ -111,7 +112,7 @@ class SparseDataset(D.Dataset):
         """
         super(D.Dataset, self).__init__()
         
-        assert split in ['train', 'val', 'test']
+        assert split in ['train', 'val', 'test', 'all']
         assert mode in ['multi', 'cite']
         
         self.split = split
