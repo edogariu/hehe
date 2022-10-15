@@ -10,7 +10,6 @@ from typing import List
 
 from datasets import TOP_DIR_NAME
 
-ACTIVATION = nn.SiLU
 
 # Abstract wrapper class to be used when forward propagation needs step embeddings
 class UsesDays(nn.Module):
@@ -42,14 +41,34 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
+class LinearCoder(nn.Module):
+    def __init__(self, 
+                 layer_dims: List[int], 
+                 dropout: float,
+                 input_2d: bool,):
+        super(LinearCoder, self).__init__()
+        
+        self.in_dim = layer_dims[0]
+        self.out_dim = layer_dims[-1]
+        
+        self.blocks = []
+        for i in range(len(layer_dims) - 1):
+            in_dim = layer_dims[i]
+            out_dim = layer_dims[i + 1]
+            self.blocks.append(LinearBlock(in_dim, out_dim, dropout, input_2d))
+        self.blocks = nn.Sequential(*self.blocks)
+        
+    def forward(self, x):
+        return self.blocks(x)
+
       
-class LinearCoder(UsesDays):
+class LinearCoderGroup(UsesDays):
     def __init__(self, 
                  layer_dims: List[int], 
                  dropout: float,
                  input_2d: bool,
                  days: List[int]):
-        super(LinearCoder, self).__init__()
+        super(LinearCoderGroup, self).__init__()
         
         self.in_dim = layer_dims[0]
         self.out_dim = layer_dims[-1]
@@ -58,12 +77,7 @@ class LinearCoder(UsesDays):
         
         self.models = {}
         for d in self.days:
-            self.blocks = []
-            for i in range(len(layer_dims) - 1):
-                in_dim = layer_dims[i]
-                out_dim = layer_dims[i + 1]
-                self.blocks.append(LinearBlock(in_dim, out_dim, dropout, input_2d))
-            self.models[str(d)] = nn.Sequential(*self.blocks)
+            self.models[str(d)] = LinearCoder(layer_dims, dropout, input_2d).blocks
         self.models = nn.ModuleDict(self.models)
         
     def forward(self, x, day):
@@ -140,7 +154,7 @@ class Encoder(UsesDays):
         if self.body_type == 'enformer':
             self.body = nn.Sequential(*[TransformerBlock(c_out, num_heads=8, dropout=0.2) for _ in range(self.body_length)])
         elif self.body_type == 'dilated':
-            self.body = nn.Identity()
+            self.body = nn.Identity() # TODO ADD DILATED MODEL!!!!
         else:
             raise NotImplementedError('huh????')
         
@@ -236,7 +250,7 @@ class Decoder(UsesDays):
         if self.body_type == 'enformer':
             self.rev_body = nn.Sequential(*[TransformerBlock(self.num_channels, num_heads=8, dropout=0.2) for _ in range(self.body_length)])
         elif self.body_type == 'dilated':
-            self.rev_body = nn.Identity()
+            self.rev_body = nn.Identity()  # TODO ADD DILATED MODELL!!!!
         else:
             raise NotImplementedError('huh????')
         
@@ -287,19 +301,21 @@ class LinearBlock(nn.Module):
                 
         self.in_linear = nn.Conv1d(in_dim, out_dim, 1) if input_2d else nn.Linear(in_dim, out_dim)
         self.out_linear = nn.Conv1d(out_dim, out_dim, 1) if input_2d else nn.Linear(out_dim, out_dim)
+
+        self.activation = nn.ReLU()
         
-        self.activation = ACTIVATION()
         self.out_norm = ChannelNorm(out_dim) if input_2d else nn.LayerNorm(out_dim)
         
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         h = x
-        h = self.activation(self.in_linear(h))
+        h = self.in_linear(h)
+        h = self.activation(h)
         h = self.out_norm(h)
         h = self.dropout(h)
-        h = self.out_linear(h)
-        
+        t = h
+        h = self.out_linear(h) + t
         return h
    
 class ConvBlock(nn.Module):
