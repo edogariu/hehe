@@ -42,16 +42,16 @@ for i, s in enumerate(cite_keys):
 METHOD = 'cite'  # change this to decide which model to train
 model_filename = 'test'
 
-alpha = 0.01
+alpha = 0.00
 
 batch_size = 512
 
-num_epochs = 20
-eval_every = 2
+num_epochs = 100
+eval_every = 5
 patience = 1000
 num_tries = 2
 
-initial_lr = 0.001
+initial_lr = 0.04
 lr_decay_period = 10
 lr_decay_gamma = 0.7
 weight_decay = 0.0001
@@ -70,11 +70,11 @@ train_dataset = H5Dataset('train', METHOD)
 val_dataset = H5Dataset('val', METHOD)
 test_dataset = H5Dataset('test', METHOD)
 
-model = LinearCoder([len(input_idxs), len(target_idxs)], dropout=dropout, input_2d=False)
+model = RNAUnifier([len(input_idxs), 6400, 6400, len(target_idxs)], dropout=dropout)
 device = torch.device('cuda')
 
 train_dataloader = train_dataset.get_dataloader(batch_size)
-val_dataloader = val_dataset.get_dataloader(batch_size)
+val_dataloader = None #val_dataset.get_dataloader(batch_size)
 
 class PredLoss():
     def __init__(self, model, alpha, input_idxs, target_idxs, method):
@@ -90,7 +90,8 @@ class PredLoss():
         sparsity_predictions, regressions = self.model(inputs)
         
         mask = targets != 0
-        loss = F.binary_cross_entropy(sparsity_predictions, targets != 0) + self.alpha * F.mse_loss(regressions[mask], targets[mask])
+
+        loss = F.binary_cross_entropy(sparsity_predictions, mask.float()) + self.alpha * F.mse_loss(regressions[mask], targets[mask])
         return loss
         
     def error(self, x, day, y):
@@ -98,13 +99,14 @@ class PredLoss():
         inputs, targets = rna[:, self.input_idxs], rna[:, self.target_idxs]
         sparsity_predictions, regressions = self.model(inputs)
         
-        error = F.mse_loss(regressions, targets)
+        error = F.binary_cross_entropy(sparsity_predictions, (targets != 0).float())
+        # error = F.mse_loss(regressions, targets)
         return error.item()
 
 l = PredLoss(model, alpha, input_idxs, target_idxs, METHOD)
-model.load_state_dict(torch.load(os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(model_filename))))
-trainer = Trainer(model, model_filename, l.loss, l.error, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
-trainer.train(num_epochs, eval_every, patience, num_tries)
+# model.load_state_dict(torch.load(os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(model_filename))))
+# trainer = Trainer(model, model_filename, l.loss, l.error, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
+# trainer.train(num_epochs, eval_every, patience, num_tries)
 
 print('loading model')
 model.load_state_dict(torch.load(os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(model_filename))))

@@ -92,7 +92,7 @@ class RNAUnifier(nn.Module):
             out_dim = layer_dims[i + 1]
             self.regression_body.append(nn.Linear(in_dim, out_dim))
             self.regression_body.append(nn.GELU())
-        self.sparsity_body.pop()
+        self.regression_body.pop()
         self.regression_body = nn.Sequential(*self.regression_body)
         
     def forward(self, x):
