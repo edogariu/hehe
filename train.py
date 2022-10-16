@@ -70,8 +70,6 @@ train_dataset = H5Dataset('train', METHOD)
 val_dataset = H5Dataset('val', METHOD)
 test_dataset = H5Dataset('test', METHOD)
 
-num = 3500 if METHOD == 'multi' else 2564
-
 model = LinearCoder([len(input_idxs), len(target_idxs)], dropout=dropout, input_2d=False)
 device = torch.device('cuda')
 
