@@ -103,7 +103,6 @@ class Trainer():
         
         with torch.no_grad():
             errs = []
-            losses = []
             for (x, day), y in tqdm.tqdm(self.val_dataloader):
                 x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
                 

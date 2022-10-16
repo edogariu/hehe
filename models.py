@@ -41,6 +41,68 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
+class RNAUnifier(nn.Module):
+    def __init__(self,
+                 layer_dims: List[int],
+                 dropout: float):
+        """
+        Model to predict which entries are nonzero, as well as regress the nonzero values.
+        Outputs two vectors of size `(N, layer_dims[-1])`: 
+            - the first is a sigmoided probability of nonzero-ness
+            - the second is attempted regressions of all values
+
+        Parameters
+        ----------
+        layer_dims : List[int]
+            dimensions of FCNN layers. `layer_dims[0]` should be the input dimension, and `layer_dims[-1]` should be the output dimension
+        dropout : float
+            dropout probability
+        """
+        super(RNAUnifier, self).__init__()
+        
+        self.in_dim = layer_dims[0]
+        self.out_dim = layer_dims[-1]
+        
+        half_len = len(layer_dims) // 2
+        
+        # main head
+        self.head = []
+        for i in range(half_len):
+            in_dim = layer_dims[i]
+            out_dim = layer_dims[i + 1]
+            self.head.append(nn.Linear(in_dim, out_dim))
+            self.head.append(nn.GELU())
+        self.head.append(nn.Dropout(dropout, inplace=True))
+        self.head = nn.Sequential(*self.head)
+        
+        # sparsity prediction body
+        self.sparsity_body = []
+        for i in range(half_len, len(layer_dims) - 1):
+            in_dim = layer_dims[i]
+            out_dim = layer_dims[i + 1]
+            self.sparsity_body.append(nn.Linear(in_dim, out_dim))
+            self.sparsity_body.append(nn.Tanh())
+        self.sparsity_body[-1] = nn.Sigmoid()
+        self.sparsity_body = nn.Sequential(*self.sparsity_body)
+        
+        # regression body
+        self.regression_body = []
+        for i in range(half_len, len(layer_dims) - 1):
+            in_dim = layer_dims[i]
+            out_dim = layer_dims[i + 1]
+            self.regression_body.append(nn.Linear(in_dim, out_dim))
+            self.regression_body.append(nn.GELU())
+        self.sparsity_body.pop()
+        self.regression_body = nn.Sequential(*self.regression_body)
+        
+    def forward(self, x):
+        h = x
+        h = self.head(h)
+        sparsity_predictions = self.sparsity_body(h)
+        regressions = self.regression_body(h)
+        return sparsity_predictions, regressions
+
+
 class LinearCoder(nn.Module):
     def __init__(self, 
                  layer_dims: List[int], 
