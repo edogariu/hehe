@@ -20,9 +20,11 @@ class Trainer():
                  lr_decay_period: int, 
                  lr_decay_gamma: float, 
                  weight_decay: float,
+                 grad_accumulation_steps = 1,
                  ):
         """
-        Trainer object to train a model. Uses Adam optimizer, StepLR learning rate scheduler, and a patience algorithm.
+        Trainer object to train a model. Uses AdamW optimizer, StepLR learning rate scheduler, and a patience algorithm.
+        Can optionally use gradient accumulation if low memory and slow training is a problem.
 
         Parameters
         ------------
@@ -48,6 +50,8 @@ class Trainer():
             size of each decay step
         weight_decay: float
             l2 regularization
+        grad_accumulation_steps: int
+            how many `loss.backward()` computations to accumulate before each `optimizer.step()`
         """
         
         self.model = model
@@ -64,8 +68,9 @@ class Trainer():
 
         # prep model and optimizer and scheduler
         self.model.train().to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=initial_lr, weight_decay=weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=lr_decay_period, gamma=lr_decay_gamma)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=initial_lr, weight_decay=weight_decay)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=lr_decay_period, gamma=lr_decay_gamma, verbose=True)
+        self.grad_accumulation_steps = grad_accumulation_steps
 
         # prep statistics
         self.train_losses = {}
@@ -79,15 +84,17 @@ class Trainer():
         print('------------------  TRAIN - EPOCH NUM {}  -------------------'.format(epoch_num))
         print('-------------------------------------------------------------')
         
-        avg_loss = 0.0
+        avg_loss = 1.0
         i = 0
+        self.optimizer.zero_grad()
         for (x, day), y in tqdm.tqdm(self.train_dataloader):
-            self.optimizer.zero_grad()
             x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
-            loss = self.loss_fn(x, day, y)
+            loss = self.loss_fn(x, day, y) / self.grad_accumulation_steps
             loss.backward()
             avg_loss += loss.item()
-            self.optimizer.step()
+            if (i + 1) % self.grad_accumulation_steps == 0:
+                self.optimizer.step()
+                self.optimizer.zero_grad()
             i += 1
         self.scheduler.step()
         avg_loss = avg_loss / i

@@ -28,26 +28,6 @@ models = {'in_encoder': in_encoder,
           'predictor': predictor}
 jepa = JEPA(models)
 
-# latent_dim = 12
-# n_chan = 32
-
-# in_encoder = Encoder(22050, latent_dim, 24, 4, 5, 'enformer', 'attention')
-# out_decoder = Decoder(latent_dim, 140, 24, 4, 5, 'enformer', 'conv')
-# predictor = LinearCoder([latent_dim, latent_dim], 32, True, 0.05)
-# models = {'in_encoder': in_encoder,
-#          'out_decoder': out_decoder,
-#          'predictor': predictor}
-# jepa = JEPA(models)
-# print(jepa)
-
-# test things
-# example pipeline for JEPA inference
-# for (x, day), y in train_dataloader:  # grab one batch
-#     x, day = x, day
-#     y = y
-#     break 
-# print(jepa.infer(x, day).shape, y.shape)  # these better be the same shape lol
-
 # train
 initial_lrs = {'in_encoder': 0.04,
                'in_decoder': 0.04,

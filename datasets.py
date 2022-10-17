@@ -89,7 +89,7 @@ class H5Dataset(D.Dataset):
         return (inputs, targets)
             
     def get_dataloader(self, batch_size: int, shuffle=True):
-        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True)
+        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True, pin_memory=True)
     
 class SparseDataset(D.Dataset):
     """
@@ -124,7 +124,7 @@ class SparseDataset(D.Dataset):
         self.inputs_npz = ss.load_npz(inputs_file)
         
         # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
-        ids = np.array(h5py.File(os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_inputs.h5'), 'r')[f'train_{mode}_inputs']['axis1'], dtype=str)
+        ids = np.array(h5py.File(os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_inputs.h5'), 'r')[f'train_{mode}_inputs']['axis1']).astype(str)
         self.metadata = METADATA.loc[ids]
         
         targets_file = os.path.join(TOP_DIR_NAME, 'data_sparse', f'train_{mode}_targets_sparse.npz')
@@ -162,7 +162,7 @@ class SparseDataset(D.Dataset):
         return (inputs, targets)
     
     def get_dataloader(self, batch_size: int, shuffle=True):
-        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True)
+        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True, pin_memory=True, num_workers=4)
 
 if __name__ == '__main__':
     """

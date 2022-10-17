@@ -91,7 +91,7 @@ class RNAUnifier(nn.Module):
             in_dim = layer_dims[i]
             out_dim = layer_dims[i + 1]
             self.regression_body.append(nn.Linear(in_dim, out_dim))
-            self.regression_body.append(nn.GELU())
+            self.regression_body.append(GeLU())
         self.regression_body.pop()
         self.regression_body = nn.Sequential(*self.regression_body)
         
@@ -214,7 +214,7 @@ class Encoder(UsesDays):
         
         # body is `length` x body_type
         if self.body_type == 'enformer':
-            self.body = nn.Sequential(*[TransformerBlock(c_out, num_heads=8, dropout=0.2) for _ in range(self.body_length)])
+            self.body = nn.Sequential(*[TransformerBlock(c_out, num_heads=8, dropout=0.1) for _ in range(self.body_length)])
         elif self.body_type == 'dilated':
             self.body = nn.Identity() # TODO ADD DILATED MODEL!!!!
         else:
@@ -223,7 +223,7 @@ class Encoder(UsesDays):
         self.pointwise = nn.Sequential(
             # TargetLengthCrop(320), 
             ConvBlock(c_out, 2 * self.num_channels, 1, 1),
-            nn.Dropout(0.05),
+            nn.Dropout(0.03),
             GeLU(),
         )
         
