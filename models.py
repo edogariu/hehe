@@ -366,7 +366,7 @@ class LinearBlock(nn.Module):
 
         self.activation = nn.ReLU()
         
-        self.out_norm = ChannelNorm(out_dim) if input_2d else nn.LayerNorm(out_dim)
+        self.out_norm = ChannelNorm(out_dim) if input_2d else nn.BatchNorm1d(out_dim)
         
         self.dropout = nn.Dropout(dropout)
 

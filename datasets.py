@@ -162,7 +162,7 @@ class SparseDataset(D.Dataset):
         return (inputs, targets)
     
     def get_dataloader(self, batch_size: int, shuffle=True):
-        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True, pin_memory=True, num_workers=4)
+        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True, pin_memory=True)
 
 if __name__ == '__main__':
     """

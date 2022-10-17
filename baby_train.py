@@ -62,6 +62,8 @@ def train():
         def error(self, x, day, y):
             rna = x
             protein_hat = self.model(rna, day)
+            print(protein_hat[0, :20])
+            print(y[0, :20])
             loss = F.mse_loss(protein_hat, y)
             return loss.item()
 
@@ -78,7 +80,7 @@ def train():
                         lr_decay_gamma, 
                         weight_decay, 
                         grad_accumulation_steps=1)
-    trainer.train(num_epochs, eval_every, patience, num_tries)
+    # trainer.train(num_epochs, eval_every, patience, num_tries)
 
     print('testing model')
     model.load_state_dict(torch.load(os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(model_filename))))
@@ -87,9 +89,9 @@ def train():
     test_dataloader = test_dataset.get_dataloader(1)
     total_err = 0.0
     for (x, day), y in tqdm.tqdm(test_dataloader):
+        x, day, y = x.to(device), day.to(device), y.to(device)
         total_err += l.error(x, day, y)
     print(total_err / len(test_dataloader))
 
 if __name__ == '__main__':
     train()
-    
