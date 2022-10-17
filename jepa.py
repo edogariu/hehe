@@ -1,21 +1,21 @@
-import os
 from typing import Dict
-from models import *
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
-class JEPA():
+from model import Model
+
+class JEPA(Model):
     """
     a class to handle joint embeddings, possibly with predictor between them
     
     in_encoder and out_decoder are necessary. the rest are optional.
     """
     def __init__(self, 
-                 models: Dict[str, nn.Module],):
+                 models: nn.Module | Dict[str, nn.Module],
+                 model_name = 'Joint Embedding (Predictive) Architecture'):
         assert models.__contains__('in_encoder') and models.__contains__('out_decoder') and models['in_encoder'] is not None and models['out_decoder'] is not None
-        
-        self._models = models
+        super(JEPA, self).__init__(models, model_name)
         
         self._in_encoder = models['in_encoder']
         self._in_decoder = models['in_decoder'] if models.__contains__('in_decoder') else None
@@ -31,81 +31,6 @@ class JEPA():
             assert self._in_encoder.out_dim == self._predictor.in_dim and self._predictor.out_dim == self._out_decoder.in_dim, 'inconsistent latent dim'
         else:
             assert self._in_encoder.out_dim == self._out_decoder.in_dim, 'inconsistent latent dim'
-        
-    def train(self):
-        """
-        Change models to train mode
-        """
-        for model in self._models.values():
-            model.train()
-        return self
-        
-    def eval(self):
-        """
-        Change models to evaluation mode
-        """
-        for model in self._models.values():
-            model.eval()
-        return self
-        
-    def to(self, device: torch.device):
-        """
-        Move models to given device.
-
-        Parameters
-        ----------
-        device : torch.device
-            device
-        """
-        for model in self._models.values():
-            model.to(device)
-        return self
-        
-    def init_optimizers_and_lr_schedulers(self, 
-                                          initial_lrs: Dict[str, float], 
-                                          lr_decay_periods: Dict[str, int], 
-                                          lr_decay_gammas: Dict[str, float], 
-                                          weight_decays: Dict[str, float]):
-        """
-        Creates optimiziers and learning rate schedulers for each model.
-
-        Parameters
-        ----------
-        initial_lrs : Dict[str, float]
-            learning rate to start with for each model
-        lr_decay_periods : Dict[str, int]
-            how many epochs between each decay step for each model
-        lr_decay_gammas : Dict[str, float]
-            size of each decay step for each model
-        weight_decays : Dict[str, float]
-            l2 regularization for each model
-        """
-        self._optimizers = {}
-        self._lr_schedulers = {}
-        for k in self._models.keys():
-            self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=initial_lrs[k], weight_decay=weight_decays[k])
-            self._lr_schedulers[k] = optim.lr_scheduler.StepLR(self._optimizers[k], step_size=lr_decay_periods[k], gamma=lr_decay_gammas[k], verbose=True)
-    
-    def step_optimizers(self):
-        """
-        Steps optimizers for each model
-        """
-        for optimizer in self._optimizers.values():
-            optimizer.step()
-    
-    def zero_grad(self):
-        """
-        Zeros gradients of optimizers for each model
-        """
-        for optimizer in self._optimizers.values():
-            optimizer.zero_grad()
-    
-    def step_lr_schedulers(self):
-        """
-        Steps learning rate schedulers for each model
-        """
-        for lr_scheduler in self._lr_schedulers.values():
-            lr_scheduler.step()
         
     def infer(self, 
               x: torch.tensor, 
@@ -199,27 +124,3 @@ class JEPA():
         error = F.mse_loss(out, y).item()
         # loss = self.loss(x, day, y)
         return error, error
-    
-    def __str__(self) -> str:
-        s = 'Joint Embedding (Predictive) Architecture with the following models:\n'
-        for k in self._models.keys():
-            s += '\t{} with {} parameters\n'.format(k, count_parameters(self._models[k]))
-        return s
-    
-    def load_checkpoint(self):
-        for k in self._models:
-            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
-            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
-            
-            assert os.path.isfile(model_filename) and os.path.isfile(opt_filename)
-
-            self._models[k].load_state_dict(torch.load(model_filename))
-            self._optimizers[k].load_state_dict(torch.load(opt_filename))
-    
-    def save_checkpoint(self):
-        for k in self._models:
-            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
-            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
-
-            torch.save(self._models[k].state_dict(), model_filename)
-            torch.save(self._optimizers[k].state_dict(), opt_filename)

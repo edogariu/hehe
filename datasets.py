@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import numpy as np
 
-TOP_DIR_NAME = os.path.dirname(os.path.abspath(__file__))
+from utils import TOP_DIR_NAME
 
 METADATA = pd.read_csv(os.path.join(TOP_DIR_NAME, 'data', 'metadata.csv')) 
 METADATA.set_index('cell_id', inplace=True) # index metadata by cell id

@@ -4,39 +4,39 @@ import torch
 import torch.utils.data as D
 import tqdm
 
-from jepa import JEPA, TOP_DIR_NAME
+from model import Model, TOP_DIR_NAME
 
 class Trainer():
     def __init__(self, 
-                 jepa: JEPA, 
+                 model: Model, 
                  train_dataloader: D.DataLoader,
                  val_dataloader: D.DataLoader,
-                 initial_lrs: Dict[str, float], 
-                 lr_decay_periods: Dict[str, int], 
-                 lr_decay_gammas: Dict[str, float], 
-                 weight_decays: Dict[str, float]):
+                 initial_lr: float | Dict[str, float], 
+                 lr_decay_period: int | Dict[str, int], 
+                 lr_decay_gamma: float | Dict[str, float], 
+                 weight_decay: float | Dict[str, float]):
         """
         Trainer object to train a model. Uses Adam optimizer, StepLR learning rate scheduler, and a patience algorithm.
 
         Parameters
         ------------
-        jepa : JEPA
-            joint embedding predictive architecture object to train
+        model : Model
+            single model or ensemble to train
         train_dataloader : D.DataLoader
             dataloader for training data
         val_dataloader : D.DataLoader
             dataloader for validation data. If this is `None`, we do not validate
-        initial_lrs : Dict[str, float]
+        initial_lr : float | Dict[str, float]
             learning rate to start with for each model
-        lr_decay_periods : Dict[str, int]
+        lr_decay_period : int | Dict[str, int]
             how many epochs between each decay step for each model
-        lr_decay_gammas : Dict[str, float]
+        lr_decay_gamma : float | Dict[str, float]
             size of each decay step for each model
-        weight_decays : Dict[str, float]
+        weight_decay : float | Dict[str, float]
             l2 regularization for each model
         """
         
-        self.jepa = jepa
+        self.model = model
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         if val_dataloader is None:
@@ -46,8 +46,8 @@ class Trainer():
         print('Using {} for training'.format(self.device))
 
         # prep model and optimizer and scheduler
-        self.jepa.train().to(self.device)
-        self.jepa.init_optimizers_and_lr_schedulers(initial_lrs, lr_decay_periods, lr_decay_gammas, weight_decays)
+        self.model.train().to(self.device)
+        self.model.init_optimizer_and_lr_scheduler(initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
 
         # prep statistics
         self.train_losses = {}
@@ -56,7 +56,7 @@ class Trainer():
         self.best_val_err = (0, float('inf'))  # epoch num and value of best validation loss
 
     def train_one_epoch(self, epoch_num):
-        self.jepa.train()
+        self.model.train()
         print()
         print('-------------------------------------------------------------')
         print('------------------  TRAIN - EPOCH NUM {}  -------------------'.format(epoch_num))
@@ -65,20 +65,20 @@ class Trainer():
         avg_loss = 0.0
         i = 0
         for (x, day), y in tqdm.tqdm(self.train_dataloader):
-            self.jepa.zero_grad()
+            self.model.zero_grad()
             x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
-            loss = self.jepa.loss(x, day, y)
+            loss = self.model.loss(x, day, y)
             loss.backward()
             avg_loss += loss.item()
-            self.jepa.step_optimizers()
+            self.model.step_optimizers()
             i += 1
-        self.jepa.step_lr_schedulers()
         avg_loss = avg_loss / i
         self.train_losses[epoch_num] = avg_loss
         print('avg batch training loss for epoch {}: {}'.format(epoch_num, round(avg_loss, 6)))
+        self.model.step_lr_schedulers()
 
     def eval(self, epoch_num):
-        self.jepa.eval()
+        self.model.eval()
         print()
         print('-------------------------------------------------------------')
         print('-------------------  VAL - EPOCH NUM {}  -------------------'.format(epoch_num))
@@ -90,7 +90,7 @@ class Trainer():
             for (x, day), y in tqdm.tqdm(self.val_dataloader):
                 x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
                 
-                err, loss = self.jepa.eval_err(x, day, y)
+                err, loss = self.model.eval_err(x, day, y)
                 errs.append(err)
                 losses.append(loss)
 
@@ -101,7 +101,11 @@ class Trainer():
         print('avg validation error and batch loss for epoch {}: {}       {}'.format(epoch_num, round(avg_err, 6), round(avg_loss, 6)))
         return avg_err
 
-    def train(self, num_epochs, eval_every, patience, num_tries):
+    def train(self, 
+              num_epochs: int, 
+              eval_every: int, 
+              patience: int, 
+              num_tries: int,):
         """
         Train the model. Applies patience -- every `eval_every` epochs, we eval on validation data using a metric (corner distance) thats not the loss function. 
         We expect the model to improve in this metric as we train: if after `patience` validation steps the model has still not improved, we reset to the best previous checkpoint.
@@ -120,10 +124,10 @@ class Trainer():
 
         Returns 
         --------------
-        jepa : JEPA
-            the trained ensemble
+        model : Model
+            the trained model or ensemble
         """
-        print('Training the following ensemble for {} epochs:\n\n{}'.format(num_epochs, self.jepa))
+        print('Training the following ensemble for {} epochs:\n\n{}'.format(num_epochs, self.model))
         patience_counter = 0
         tries_counter = 0
         for e in range(num_epochs):
@@ -135,7 +139,7 @@ class Trainer():
                         if val_err < self.best_val_err[1]:  # measure whether our model is improving
                             self.best_val_err = (e, val_err)
                             patience_counter = 0
-                            self.jepa.save_checkpoint()
+                            self.model.save_checkpoint()
                             print('Saved checkpoint for epoch num {}'.format(e))
                         else:
                             patience_counter += 1
@@ -143,26 +147,26 @@ class Trainer():
                             if patience_counter >= patience:  # if our model has not improved after `patience` evaluations, reset to best checkpoint
                                 tries_counter += 1
                                 patience_counter = 0
-                                self.jepa.load_checkpoint()
+                                self.model.load_checkpoint()
                                 print('Loaded checkpoint from epoch num {}'.format(self.best_val_err[0]))
                                 print('Try {} hit'.format(tries_counter))
                                 if tries_counter >= num_tries:  # if our model has reset to best checkpoint `num_tries` times, we are done
                                     print('Stopping training!')
                                     break
                     else:
-                        self.jepa.save_checkpoint()
+                        self.model.save_checkpoint()
                         print('Saved checkpoint for epoch num {}'.format(e))
             except KeyboardInterrupt:
                 print('Catching keyboard interrupt!!!')
                 self.finish_up(e)
                 exit(0)
         self.finish_up(num_epochs)
-        return self.jepa
+        return self.model
 
     def finish_up(self, e):
         val_err = self.eval(e) if self.val_dataloader else -float('inf')
         if val_err < self.best_val_err[1]:
-            self.jepa.save_checkpoint()
+            self.model.save_checkpoint()
             print('Saved checkpoint at the end of training!')
 
         k = np.array(list(self.train_losses.keys()))

@@ -1,15 +1,13 @@
+import math
+from abc import abstractmethod
+from typing import List
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-import numpy as np
 
-import math
-from abc import abstractmethod
-from typing import List
-
-from datasets import TOP_DIR_NAME
-
+from utils import device, zero_module, exponential_linspace_int, CITESEQ_CODING_GENES, CITESEQ_CONSTANT_GENES
 
 # Abstract wrapper class to be used when forward propagation needs step embeddings
 class UsesDays(nn.Module):
@@ -41,6 +39,84 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
+class RNA2Protein(nn.Module):
+    def __init__(self,
+                 in_dim: int,
+                 out_dim: int,
+                 hidden_dim: int,
+                 head_length: int,
+                 body_length: int
+                 ):
+        """
+        Model to regress protein surface levels from CITEseq gene expression measurements.
+        This model treats the coding genes separately from the rest.
+
+        Parameters
+        ----------
+        in_dim : int
+            dimension of RNAseq gene expression vector
+        out_dim : int
+            dimension of protein surface level vector
+        hidden_dim : int
+            intermediate dimension (output dim of head)
+        head_length : int
+            number of layers used to preprocess the non-coding genes
+        body_length : int
+            number of layers used to regress protein surface levels from coding gene expressions and the output of the head
+        """
+        super(RNA2Protein, self).__init__()
+        
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.head_length = head_length
+        self.body_length = body_length
+        
+        # figure out which indices are useful and which are not
+        cite_keys = list(pd.read_hdf('data/train_cite_inputs.h5', start=0, stop=5).keys())  # list of genes measured in CITEseq
+        coding_idxs = []
+        other_idxs = []
+        for i, s in enumerate(cite_keys):
+            if s in CITESEQ_CODING_GENES:
+                coding_idxs.append(i)
+            elif s not in CITESEQ_CONSTANT_GENES:
+                other_idxs.append(i)
+        self.coding_idxs = torch.tensor(coding_idxs, requires_grad=False, dtype=torch.long).to(device)
+        self.other_idxs = torch.tensor(other_idxs, requires_grad=False, dtype=torch.long).to(device)
+        
+        # head for handling the non-coding genes        
+        head_layer_dims = exponential_linspace_int(start=len(other_idxs), end=hidden_dim, num=self.head_length + 1, divisible_by=1)
+        self.head = []
+        for i in range(self.head_length):
+            in_dim = head_layer_dims[i]
+            out_dim = head_layer_dims[i + 1]
+            self.head.append(nn.Linear(in_dim, out_dim))
+            self.head.append(nn.LeakyReLU(0.1))
+        self.head = nn.Sequential(*self.head)
+        
+        # body for combining the coding genes with the output of the head
+        body_layer_dims = exponential_linspace_int(start=hidden_dim, end=self.out_dim, num=self.body_length + 1, divisible_by=1)
+        self.body = []
+        for i in range(self.body_length - 1):
+            in_dim = body_layer_dims[i] + len(self.coding_idxs)  # we plan to pass the coding genes at every layer of the body, concat style :)
+            out_dim = body_layer_dims[i + 1]
+            self.body.append(nn.Sequential(
+                                    nn.Linear(in_dim, out_dim), 
+                                    nn.LeakyReLU(0.1)
+                                ))
+        self.body.append(nn.Linear(len(self.coding_idxs) + out_dim, self.out_dim))  # last layer has no ReLU
+        self.body = nn.ModuleList(self.body)
+        
+    def forward(self, x):
+        rna = x
+        coding_genes = rna[:, self.coding_idxs]
+        other_genes = rna[:, self.other_idxs]
+                
+        h = self.head(other_genes)
+        for layer in self.body:
+            h = torch.cat((coding_genes, h), dim=-1)  # concat the coding gene levels with each intermediate activation
+            h = layer(h)
+        return h  
+       
 class RNAUnifier(nn.Module):
     def __init__(self,
                  layer_dims: List[int],
@@ -639,57 +715,3 @@ class UnpoolConv(nn.Module):
         x = F.interpolate(x, size=self.out_length, mode='nearest')
         x = self.conv(x)
         return x
-
-# -----------------------------------------------------------------------------
-# -------------------------------------  UTILS  -------------------------------
-# -----------------------------------------------------------------------------
-
-# Method to create sinusoidal timestep embeddings, much like positional encodings found in many Transformers
-def timestep_embedding(timesteps, embedding_dim, method='identity', max_period=10000):
-    """
-    Embeds input timesteps
-
-    Parameters
-    ----------
-    timesteps : torch.tensor
-        input timesteps
-    embedding_dim : int
-        dimension for each scalar to embed to
-    method : str, optional
-        how to perform embedding, by default 'sin', must be one of `['sin', 'identity']`
-    max_period : int, optional
-        maximum period for sinusoidal embeddings, by default 10000
-
-    Returns
-    -------
-    torch.tensor
-        embedded timesteps
-    """
-    if method == 'sin':
-        half = embedding_dim // 2
-        emb = math.log(max_period) / half
-        emb = torch.exp(torch.arange(half, dtype=torch.float32) * -emb).to(timesteps.device)
-        emb = timesteps[:, None].float() * emb[None]
-        emb = torch.cat([torch.cos(emb), torch.sin(emb)], dim=1)
-        # Zero pad for odd dimensions
-        if embedding_dim % 2 == 1:
-            emb = F.pad(emb, (0, 1, 0, 0))
-    elif method == 'identity':
-        emb = timesteps.unsqueeze(-1).expand([*timesteps.shape, embedding_dim]) / 5 - 1  # rescale to be in [-1, 1], where -1 is day 0 and 1 is day 10
-    return emb
-
-def count_parameters(model: nn.Module):
-    return sum(p.numel() for p in model.parameters())
-
-def exponential_linspace_int(start, end, num, divisible_by=1):
-    """Exponentially increasing values of integers."""
-    base = np.exp(np.log(end / start) / (num - 1))
-    return [int(np.round(start * base**i / divisible_by) * divisible_by) for i in range(num)]
-
-def zero_module(module):
-    """
-    Helpful method that zeros all the parameters in a nn.Module, used for initialization
-    """
-    for param in module.parameters():
-        param.detach().zero_()
-    return module
