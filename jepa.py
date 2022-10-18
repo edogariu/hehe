@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +12,7 @@ class JEPA(Model):
     in_encoder and out_decoder are necessary. the rest are optional.
     """
     def __init__(self, 
-                 models: nn.Module | Dict[str, nn.Module],
+                 models: Union[nn.Module, Dict[str, nn.Module]],
                  model_name = 'Joint Embedding (Predictive) Architecture'):
         assert models.__contains__('in_encoder') and models.__contains__('out_decoder') and models['in_encoder'] is not None and models['out_decoder'] is not None
         super(JEPA, self).__init__(models, model_name)

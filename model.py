@@ -1,5 +1,5 @@
 import os
-from typing import Dict
+from typing import Dict, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -22,10 +22,13 @@ class Model():
     a class to interact with any framework of models
     """
     def __init__(self, 
-                 models: nn.Module | Dict[str, nn.Module],
+                 models: Union[nn.Module, Dict[str, nn.Module]],
                  model_name = None):
         self._model_name = model_name if model_name else 'main'  # only used in the __str__() method and as the dict key if training a single nn.Module
         self._models = models if type(models) == dict else {self._model_name: models}
+
+        self._optimizers = None
+        self._lr_schedulers = None
         
     def train(self):
         """
@@ -57,22 +60,22 @@ class Model():
         return self
         
     def init_optimizer_and_lr_scheduler(self, 
-                                        initial_lr: float | Dict[str, float], 
-                                        lr_decay_period: int | Dict[str, int], 
-                                        lr_decay_gamma: float | Dict[str, float], 
-                                        weight_decay: float | Dict[str, float]):
+                                        initial_lr: Union[float, Dict[str, float]], 
+                                        lr_decay_period: Union[int, Dict[str, int]], 
+                                        lr_decay_gamma: Union[float, Dict[str, float]], 
+                                        weight_decay: Union[float, Dict[str, float]]):
         """
         Creates optimiziers and learning rate schedulers for each model.
 
         Parameters
         ----------
-        initial_lr : float | Dict[str, float]
+        initial_lr : Union[float, Dict[str, float]]
             learning rate to start with for each model
-        lr_decay_period : int | Dict[str, int]
+        lr_decay_period : Union[int, Dict[str, int]]
             how many epochs between each decay step for each model
-        lr_decay_gamma : float | Dict[str, float]
+        lr_decay_gamma : Union[float, Dict[str, float]]
             size of each decay step for each model
-        weight_decay : float | Dict[str, float]
+        weight_decay : Union[float, Dict[str, float]]
             l2 regularization for each model
         """
         if type(initial_lr) == float: initial_lr = {self._model_name: initial_lr}
@@ -151,8 +154,8 @@ class Model():
         torch.tensor
             loss
         """
-        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and MSE over model output
-        loss  = F.mse_loss(pred, y)
+        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and L1 loss over model output
+        loss  = F.l1_loss(pred, y)
         return loss
     
     def eval_err(self, 
@@ -180,14 +183,15 @@ class Model():
             loss
         """
         with torch.no_grad():
-            pred = self._models[self._model_name](x) # default assumes only one model in ensemble and MSE over model output
-            error = F.mse_loss(pred, y).item()
+            pred = self._models[self._model_name](x) # default assumes only one model in ensemble and L1 loss over model output
+            error = F.l1_loss(pred, y).item()
         return error, error
     
     def __str__(self) -> str:
-        s = '{} with the following parts:\n'.format(self._model_name)
+        s = '{} with the following parts:\n\n'.format(self._model_name)
         for k in self._models.keys():
-            s += '\t{} with {} parameters\n'.format(k, count_parameters(self._models[k]))
+            s += str(self._models[k])
+            s += '\n\t{} with {} parameters\n'.format(k, count_parameters(self._models[k]))
         return s
     
     def load_checkpoint(self):
@@ -198,7 +202,8 @@ class Model():
             assert os.path.isfile(model_filename) and os.path.isfile(opt_filename)
 
             self._models[k].load_state_dict(torch.load(model_filename))
-            self._optimizers[k].load_state_dict(torch.load(opt_filename))
+            if self._optimizers:
+                self._optimizers[k].load_state_dict(torch.load(opt_filename))
     
     def save_checkpoint(self):
         for k in self._models:
@@ -206,4 +211,5 @@ class Model():
             opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
 
             torch.save(self._models[k].state_dict(), model_filename)
-            torch.save(self._optimizers[k].state_dict(), opt_filename)
+            if self._optimizers:
+                torch.save(self._optimizers[k].state_dict(), opt_filename)

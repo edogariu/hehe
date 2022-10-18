@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 import numpy as np
 import torch
 import torch.utils.data as D
@@ -11,10 +11,10 @@ class Trainer():
                  model: Model, 
                  train_dataloader: D.DataLoader,
                  val_dataloader: D.DataLoader,
-                 initial_lr: float | Dict[str, float], 
-                 lr_decay_period: int | Dict[str, int], 
-                 lr_decay_gamma: float | Dict[str, float], 
-                 weight_decay: float | Dict[str, float]):
+                 initial_lr: Union[float, Dict[str, float]], 
+                 lr_decay_period: Union[int, Dict[str, int]], 
+                 lr_decay_gamma: Union[float, Dict[str, float]], 
+                 weight_decay: Union[float, Dict[str, float]]):
         """
         Trainer object to train a model. Uses Adam optimizer, StepLR learning rate scheduler, and a patience algorithm.
 
@@ -26,13 +26,13 @@ class Trainer():
             dataloader for training data
         val_dataloader : D.DataLoader
             dataloader for validation data. If this is `None`, we do not validate
-        initial_lr : float | Dict[str, float]
+        initial_lr : Union[float, Dict[str, float]]
             learning rate to start with for each model
-        lr_decay_period : int | Dict[str, int]
+        lr_decay_period : Union[int, Dict[str, int]]
             how many epochs between each decay step for each model
-        lr_decay_gamma : float | Dict[str, float]
+        lr_decay_gamma : Union[float, Dict[str, float]]
             size of each decay step for each model
-        weight_decay : float | Dict[str, float]
+        weight_decay : Union[float, Dict[str, float]]
             l2 regularization for each model
         """
         
@@ -64,7 +64,7 @@ class Trainer():
         
         avg_loss = 0.0
         i = 0
-        for (x, day), y in tqdm.tqdm(self.train_dataloader):
+        for x, day, y in tqdm.tqdm(self.train_dataloader):
             self.model.zero_grad()
             x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
             loss = self.model.loss(x, day, y)
@@ -87,7 +87,7 @@ class Trainer():
         with torch.no_grad():
             errs = []
             losses = []
-            for (x, day), y in tqdm.tqdm(self.val_dataloader):
+            for x, day, y in tqdm.tqdm(self.val_dataloader):
                 x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
                 
                 err, loss = self.model.eval_err(x, day, y)

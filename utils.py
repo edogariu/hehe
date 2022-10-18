@@ -4,9 +4,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import os
+import pandas as pd
 
 TOP_DIR_NAME = os.path.dirname(os.path.abspath(__file__))
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+def correlation_score(y_true, y_pred):
+    """Scores the predictions according to the competition rules. 
+    
+    It is assumed that the predictions are not constant.
+    
+    Returns the average of each sample's Pearson correlation coefficient"""
+    if type(y_true) == pd.DataFrame: y_true = y_true.values
+    if type(y_pred) == pd.DataFrame: y_pred = y_pred.values
+    corrsum = 0
+    for i in range(len(y_true)):
+        corrsum += np.corrcoef(y_true[i], y_pred[i])[1, 0]
+    return corrsum / len(y_true)
+    
 
 # -----------------------------------------------------------------------------
 # -------------------------------------  NN UTILS  ----------------------------
