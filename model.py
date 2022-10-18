@@ -2,10 +2,9 @@ import os
 from typing import Dict, Union
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
-from utils import TOP_DIR_NAME, count_parameters
+from utils import TOP_DIR_NAME, count_parameters, negative_correlation_loss
 
 """
 This class might look real useless right about now. But I promise its practicing good design and maintainability practices!
@@ -155,7 +154,7 @@ class Model():
             loss
         """
         pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and L1 loss over model output
-        loss  = F.l1_loss(pred, y)
+        loss  = negative_correlation_loss(pred, y)
         return loss
     
     def eval_err(self, 
@@ -184,7 +183,7 @@ class Model():
         """
         with torch.no_grad():
             pred = self._models[self._model_name](x) # default assumes only one model in ensemble and L1 loss over model output
-            error = F.l1_loss(pred, y).item()
+            error = negative_correlation_loss(pred, y).item()
         return error, error
     
     def __str__(self) -> str:

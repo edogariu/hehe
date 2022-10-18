@@ -117,7 +117,7 @@ class RNA2Protein(nn.Module):
                  coding_head_length: int,
                  other_head_length: int,
                  body_length: int,
-                 use_pretrained: bool,
+                 use_pretrained_heads: bool,
                  freeze_heads=False,
                  ):
         """
@@ -138,7 +138,7 @@ class RNA2Protein(nn.Module):
             number of layers used to preprocess the non-coding genes
         body_length : int
             number of layers used to regress protein surface levels from both head outputs
-        use_pretrained : bool
+        use_pretrained_heads : bool
             whether to load pre-trained heads
         freeze_heads : bool
             whether to freeze heads during training
@@ -165,7 +165,7 @@ class RNA2Protein(nn.Module):
         self.coding_idxs = torch.tensor(coding_idxs, requires_grad=False, dtype=torch.long).to(device)
         self.other_idxs = torch.tensor(other_idxs, requires_grad=False, dtype=torch.long).to(device)
         
-        if use_pretrained:
+        if use_pretrained_heads:
             # use pre-trained coding_head
             self.coding_head = LinearCoder([len(self.coding_idxs), 1000, 1000, self.out_dim], 0.01)
             self.coding_head.load_state_dict(torch.load('checkpoints/models/cite_coding.pth'))
@@ -175,7 +175,7 @@ class RNA2Protein(nn.Module):
             self.other_head.load_state_dict(torch.load('checkpoints/models/cite_other.pth'))
         else:
             # head for handling the non-coding genes        
-            coding_head_layer_dims = exponential_linspace_int(start=len(other_idxs), end=hidden_dim, num=self.coding_head_length + 1, divisible_by=1)
+            coding_head_layer_dims = exponential_linspace_int(start=len(coding_idxs), end=hidden_dim, num=self.coding_head_length + 1, divisible_by=1)
             self.coding_head = []
             for i in range(self.coding_head_length):
                 in_dim = coding_head_layer_dims[i]
@@ -564,8 +564,7 @@ class LinearBlock(nn.Module):
         h = self.activation(h)
         h = self.out_norm(h)
         h = self.dropout(h)
-        t = h
-        h = self.out_linear(h) + t
+        h = self.out_linear(h)
         return h
    
 class ConvBlock(nn.Module):

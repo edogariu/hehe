@@ -9,19 +9,39 @@ import pandas as pd
 TOP_DIR_NAME = os.path.dirname(os.path.abspath(__file__))
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-def correlation_score(y_true, y_pred):
-    """Scores the predictions according to the competition rules. 
+def correlation_score(y_hat, y):
+    """
+    Scores the predictions according to the competition rules. 
     
     It is assumed that the predictions are not constant.
     
-    Returns the average of each sample's Pearson correlation coefficient"""
-    if type(y_true) == pd.DataFrame: y_true = y_true.values
-    if type(y_pred) == pd.DataFrame: y_pred = y_pred.values
+    Returns the average of each sample's Pearson correlation coefficient
+    """
+    if type(y) == pd.DataFrame: y = y.values
+    if type(y_hat) == pd.DataFrame: y_hat = y_hat.values
     corrsum = 0
-    for i in range(len(y_true)):
-        corrsum += np.corrcoef(y_true[i], y_pred[i])[1, 0]
-    return corrsum / len(y_true)
+    for i in range(len(y)):
+        corrsum += np.corrcoef(y[i], y_hat[i])[1, 0]
+    return corrsum / len(y)
+
+def negative_correlation_loss(y_hat, y):
+    """
+    Negative correlation loss function for tensors
     
+    Returns:
+    -1 = perfect positive correlation
+    1 = totally negative correlation
+    """
+    # normalize targets
+    y -= y.mean(dim=-1).unsqueeze(-1)
+    y /= y.std(dim=-1).unsqueeze(-1)
+    
+    # compute correlation
+    y_hat_centered = y_hat - y_hat.mean(dim=-1).unsqueeze(dim=-1)
+    r = (y * y_hat_centered).sum(dim=-1)
+    norms = torch.linalg.norm(y_hat_centered, dim=-1)
+    r = (r / norms).mean() / math.sqrt(y.shape[-1])
+    return -r
 
 # -----------------------------------------------------------------------------
 # -------------------------------------  NN UTILS  ----------------------------
