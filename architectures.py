@@ -39,76 +39,6 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
-class Test(nn.Module):
-    def __init__(self, in_dim=22050, out_dim=140):
-        super(Test, self).__init__()
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-
-        # figure out which indices are useful and which are not
-        cite_keys = list(pd.read_hdf('data/train_cite_inputs.h5', start=0, stop=5).keys())  # list of genes measured in CITEseq
-        coding_idxs = []
-        other_idxs = []
-        for i, s in enumerate(cite_keys):
-            if s in CITESEQ_CODING_GENES:
-                coding_idxs.append(i)
-            elif s not in CITESEQ_CONSTANT_GENES:
-                other_idxs.append(i)
-        self.coding_idxs = torch.tensor(coding_idxs, requires_grad=False, dtype=torch.long).to(device)
-        self.other_idxs = torch.tensor(other_idxs, requires_grad=False, dtype=torch.long).to(device)
-
-        # use pre-trained coding_head
-        self.coding_head = LinearCoder([len(self.coding_idxs), 1000, 1000, self.out_dim], 0.01)
-        self.coding_head.load_state_dict(torch.load('checkpoints/models/cite_coding.pth'))
-        self.coding_head = nn.ModuleList(list(self.coding_head.blocks))
-        self.coding_head[-1] = nn.Sequential(self.coding_head[-1].in_linear, self.coding_head[-1].out_linear)
-        self.coding_head = nn.Sequential(*self.coding_head)
-        # use pre-trained other_head
-        self.other_head = LinearCoder([len(self.other_idxs), 4000, 768, self.out_dim], 0.01)
-        self.other_head.load_state_dict(torch.load('checkpoints/models/cite_other.pth'))
-        self.other_head = nn.ModuleList(list(self.other_head.blocks))
-        self.other_head[-1] = nn.Sequential(self.other_head[-1].in_linear, self.other_head[-1].out_linear)
-        self.other_head = nn.Sequential(*self.other_head)
-        
-
-
-        self.freeze_heads = True
-        if self.freeze_heads:
-            for p in self.coding_head.parameters():
-                p.requires_grad = False
-            for p in self.other_head.parameters():
-                p.requires_grad = False
-
-        n_chan = 128
-        body_length = 3
-        self.body = nn.Sequential(
-            nn.Conv1d(1, n_chan, 1, 1),
-            nn.Sequential(*[TransformerBlock(n_chan, 8, 0.025 if i == body_length // 2 else 0.0) for i in range(body_length)]),
-            nn.Conv1d(n_chan, 1, 1, 1),
-            nn.ReLU(),
-            nn.Linear(280, 280),
-            nn.Linear(280, 140),
-        )
-        print(count_parameters(self.body))
-
-    def forward(self, x):
-        rna = x
-        coding_genes = rna[:, self.coding_idxs]
-        other_genes = rna[:, self.other_idxs]
-
-        if self.freeze_heads:
-            self.coding_head.eval()
-            self.other_head.eval()
-            with torch.no_grad():
-                coding_hidden = self.coding_head(coding_genes)
-                other_hidden = self.other_head(other_genes)
-        else:
-            coding_hidden = self.coding_head(coding_genes)
-            other_hidden = self.other_head(other_genes)
-        cat = torch.cat((coding_hidden, other_hidden), dim=-1).unsqueeze(1)
-        out = self.body(cat).squeeze(1)
-        return out
-
 class RNA2Protein(nn.Module):
     def __init__(self,
                  in_dim: int,
@@ -117,8 +47,7 @@ class RNA2Protein(nn.Module):
                  coding_head_length: int,
                  other_head_length: int,
                  body_length: int,
-                 use_pretrained_heads: bool,
-                 freeze_heads=False,
+                 body_type: str,  # one of ['linear', 'transformer']
                  ):
         """
         Model to regress protein surface levels from CITEseq gene expression measurements.
@@ -138,12 +67,12 @@ class RNA2Protein(nn.Module):
             number of layers used to preprocess the non-coding genes
         body_length : int
             number of layers used to regress protein surface levels from both head outputs
-        use_pretrained_heads : bool
-            whether to load pre-trained heads
-        freeze_heads : bool
-            whether to freeze heads during training
+        body_type : str
+            which architecture to use for body. Must be one of ['linear', 'transformer']
         """
         super(RNA2Protein, self).__init__()
+        
+        assert body_type in ['linear', 'transformer']
         
         self.in_dim = in_dim
         self.out_dim = out_dim
@@ -151,8 +80,6 @@ class RNA2Protein(nn.Module):
         self.other_head_length = other_head_length
         self.body_length = body_length
 
-        self.freeze_heads = freeze_heads
-        
         # figure out which indices are useful and which are not
         cite_keys = list(pd.read_hdf('data/train_cite_inputs.h5', start=0, stop=5).keys())  # list of genes measured in CITEseq
         coding_idxs = []
@@ -165,66 +92,55 @@ class RNA2Protein(nn.Module):
         self.coding_idxs = torch.tensor(coding_idxs, requires_grad=False, dtype=torch.long).to(device)
         self.other_idxs = torch.tensor(other_idxs, requires_grad=False, dtype=torch.long).to(device)
         
-        if use_pretrained_heads:
-            # use pre-trained coding_head
-            self.coding_head = LinearCoder([len(self.coding_idxs), 1000, 1000, self.out_dim], 0.01)
-            self.coding_head.load_state_dict(torch.load('checkpoints/models/cite_coding.pth'))
-            
-            # use pre-trained other_head
-            self.other_head = LinearCoder([len(self.other_idxs), 4000, 768, self.out_dim], 0.01)
-            self.other_head.load_state_dict(torch.load('checkpoints/models/cite_other.pth'))
-        else:
-            # head for handling the non-coding genes        
-            coding_head_layer_dims = exponential_linspace_int(start=len(coding_idxs), end=hidden_dim, num=self.coding_head_length + 1, divisible_by=1)
-            self.coding_head = []
-            for i in range(self.coding_head_length):
-                in_dim = coding_head_layer_dims[i]
-                out_dim = coding_head_layer_dims[i + 1]
-                self.coding_head.append(nn.Linear(in_dim, out_dim))
-                self.coding_head.append(nn.ReLU())
-            # self.coding_head.append(nn.BatchNorm1d(hidden_dim))
-            self.coding_head = nn.Sequential(*self.coding_head)
+        # head for handling the non-coding genes        
+        coding_head_layer_dims = exponential_linspace_int(start=len(coding_idxs), end=hidden_dim, num=self.coding_head_length + 1, divisible_by=1)
+        self.coding_head = []
+        for i in range(self.coding_head_length):
+            in_dim = coding_head_layer_dims[i]
+            out_dim = coding_head_layer_dims[i + 1]
+            self.coding_head.append(nn.Linear(in_dim, out_dim))
+            self.coding_head.append(nn.ReLU())
+        # self.coding_head.append(nn.BatchNorm1d(hidden_dim))
+        self.coding_head = nn.Sequential(*self.coding_head)
 
-            # head for handling the non-coding genes        
-            other_head_layer_dims = exponential_linspace_int(start=len(other_idxs), end=hidden_dim, num=self.other_head_length + 1, divisible_by=1)
-            self.other_head = []
-            for i in range(self.other_head_length):
-                in_dim = other_head_layer_dims[i]
-                out_dim = other_head_layer_dims[i + 1]
-                self.other_head.append(nn.Linear(in_dim, out_dim))
-                self.other_head.append(nn.ReLU())
-            # self.other_head.append(nn.BatchNorm1d(hidden_dim))
-            self.other_head = nn.Sequential(*self.other_head)
-
-        if self.freeze_heads:
-            for p in self.coding_head.parameters():
-                p.requires_grad = False
-            for p in self.other_head.parameters():
-                p.requires_grad = False
+        # head for handling the non-coding genes        
+        other_head_layer_dims = exponential_linspace_int(start=len(other_idxs), end=hidden_dim, num=self.other_head_length + 1, divisible_by=1)
+        self.other_head = []
+        for i in range(self.other_head_length):
+            in_dim = other_head_layer_dims[i]
+            out_dim = other_head_layer_dims[i + 1]
+            self.other_head.append(nn.Linear(in_dim, out_dim))
+            self.other_head.append(nn.ReLU())
+        # self.other_head.append(nn.BatchNorm1d(hidden_dim))
+        self.other_head = nn.Sequential(*self.other_head)
 
         # body for combining the coding genes with the output of the head
-        body_layer_dims = exponential_linspace_int(start=2 * hidden_dim, end=self.out_dim, num=self.body_length + 1, divisible_by=1)
-        self.body = []
-        for i in range(self.body_length):
-            in_dim = body_layer_dims[i]
-            out_dim = body_layer_dims[i + 1]
-            self.body.append(nn.Linear(in_dim, out_dim))
-        self.body = nn.Sequential(*self.body)
+        if body_type == 'linear':
+            body_layer_dims = exponential_linspace_int(start=2 * hidden_dim, end=self.out_dim, num=self.body_length + 1, divisible_by=1)
+            self.body = []
+            for i in range(self.body_length):
+                in_dim = body_layer_dims[i]
+                out_dim = body_layer_dims[i + 1]
+                self.body.append(nn.Linear(in_dim, out_dim))
+            self.body = nn.Sequential(*self.body)
+        elif body_type == 'transformer':
+            n_chan = 128
+            self.body = nn.Sequential(
+                nn.Conv1d(1, n_chan, 1, 1),
+                nn.Sequential(*[TransformerBlock(n_chan, 8, 0.025 if i == self.body_length // 2 else 0.0) for i in range(self.body_length)]),
+                nn.Conv1d(n_chan, 1, 1, 1),
+                nn.ReLU(),
+                nn.Linear(2 * hidden_dim, 2 * hidden_dim),
+                nn.Linear(2 * hidden_dim, 140),
+            )
         
     def forward(self, x):
         rna = x
         coding_genes = rna[:, self.coding_idxs]
         other_genes = rna[:, self.other_idxs]
 
-        if self.freeze_heads:
-            self.coding_head.eval()
-            self.other_head.eval()
-            with torch.no_grad():
-                coding_hidden = self.coding_head(coding_genes)
-                other_hidden = self.other_head(other_genes)
-        else:
-            coding_hidden = self.coding_head(coding_genes)
-            other_hidden = self.other_head(other_genes)
+        coding_hidden = self.coding_head(coding_genes)
+        other_hidden = self.other_head(other_genes)
         cat = torch.cat((coding_hidden, other_hidden), dim=-1)
         out = self.body(cat)
         return out

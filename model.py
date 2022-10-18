@@ -153,7 +153,7 @@ class Model():
         torch.tensor
             loss
         """
-        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and L1 loss over model output
+        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and NC loss over model output
         loss  = negative_correlation_loss(pred, y)
         return loss
     
@@ -182,7 +182,7 @@ class Model():
             loss
         """
         with torch.no_grad():
-            pred = self._models[self._model_name](x) # default assumes only one model in ensemble and L1 loss over model output
+            pred = self._models[self._model_name](x) # default assumes only one model in ensemble and NC loss over model output
             error = negative_correlation_loss(pred, y).item()
         return error, error
     
