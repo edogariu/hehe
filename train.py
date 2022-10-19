@@ -52,12 +52,12 @@ def train():
     # ----------------------------------------------------------------------------------------------------
 
     # ------------------------------------- hyperparameters -------------------------------------------------
-    batch_size = 128
-    model_name = 'rna_to_protein_enformer'
+    batch_size = 18
+    model_name = 'test'
 
-    initial_lr = 0.025
-    lr_decay_period = 20
-    lr_decay_gamma = 0.75
+    initial_lr = 0.04
+    lr_decay_period = 5
+    lr_decay_gamma = 0.5
     weight_decay = 0.0001
 
     num_epochs = 100
@@ -65,18 +65,23 @@ def train():
     patience = 3
     num_tries = 15
 
-    # model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=140, 
-    #                                   coding_head_length=2, other_head_length=2, body_length=3, 
-    #                                   use_pretrained=True, freeze_heads=True)
-    # model = architectures.Encoder(in_dim=22050, out_dim=140, num_channels=256, tower_length=6, body_length=11, body_type='enformer', pooling_type='attention', output_2d=False)
-    model = architectures.Test()
+    old_model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
+                                  coding_head_length=5, other_head_length=2, body_length=3, 
+                                  body_type='linear', freeze_heads=True)
+    old_model.load_state_dict(torch.load('checkpoints/models/rna_to_protein.pth'))
+
+    model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
+                                    coding_head_length=5, other_head_length=2, body_length=2, 
+                                    body_type='transformer', freeze_heads=True)
+    model.coding_head = old_model.coding_head
+    model.other_head = old_model.other_head
     # --------------------------------------------------------------------------------------------------------
 
     print('preparing datasets!')
     train_dataloader = NaiveDataset('train', 'cite').get_dataloader(batch_size, num_workers=4)
-    val_dataloader = NaiveDataset('val', 'cite').get_dataloader(batch_size, num_workers=4)
-    # train_dataloader = SparseDataset('train', 'cite').get_dataloader(batch_size)
-    # val_dataloader = SparseDataset('val', 'cite').get_dataloader(batch_size)
+    val_dataloader = SparseDataset('val', 'cite').get_dataloader(batch_size)
+    # train_dataloader = H5Dataset('train', 'cite').get_dataloader(batch_size)
+    # val_dataloader = H5Dataset('val', 'cite').get_dataloader(batch_size)
     test_dataloader = H5Dataset('test', 'cite').get_dataloader(1)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')

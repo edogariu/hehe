@@ -48,6 +48,7 @@ class RNA2Protein(nn.Module):
                  other_head_length: int,
                  body_length: int,
                  body_type: str,  # one of ['linear', 'transformer']
+                 freeze_heads=False
                  ):
         """
         Model to regress protein surface levels from CITEseq gene expression measurements.
@@ -69,6 +70,8 @@ class RNA2Protein(nn.Module):
             number of layers used to regress protein surface levels from both head outputs
         body_type : str
             which architecture to use for body. Must be one of ['linear', 'transformer']
+        freeze_heads : bool
+            whether to freeze the heads during training
         """
         super(RNA2Protein, self).__init__()
         
@@ -79,6 +82,7 @@ class RNA2Protein(nn.Module):
         self.coding_head_length = coding_head_length
         self.other_head_length = other_head_length
         self.body_length = body_length
+        self.freeze_heads = freeze_heads
 
         # figure out which indices are useful and which are not
         cite_keys = list(pd.read_hdf('data/train_cite_inputs.h5', start=0, stop=5).keys())  # list of genes measured in CITEseq
@@ -114,6 +118,12 @@ class RNA2Protein(nn.Module):
         # self.other_head.append(nn.BatchNorm1d(hidden_dim))
         self.other_head = nn.Sequential(*self.other_head)
 
+        if self.freeze_heads:
+            for p in self.coding_head.parameters():
+                p.requires_grad = False
+            for p in self.other_head.parameters():
+                p.requires_grad = False
+
         # body for combining the coding genes with the output of the head
         if body_type == 'linear':
             body_layer_dims = exponential_linspace_int(start=2 * hidden_dim, end=self.out_dim, num=self.body_length + 1, divisible_by=1)
@@ -126,9 +136,11 @@ class RNA2Protein(nn.Module):
         elif body_type == 'transformer':
             n_chan = 128
             self.body = nn.Sequential(
+                nn.Unflatten(1, torch.Size([1, 2 * hidden_dim])),
                 nn.Conv1d(1, n_chan, 1, 1),
                 nn.Sequential(*[TransformerBlock(n_chan, 8, 0.025 if i == self.body_length // 2 else 0.0) for i in range(self.body_length)]),
                 nn.Conv1d(n_chan, 1, 1, 1),
+                nn.Flatten(1, 2),
                 nn.ReLU(),
                 nn.Linear(2 * hidden_dim, 2 * hidden_dim),
                 nn.Linear(2 * hidden_dim, 140),
@@ -139,6 +151,9 @@ class RNA2Protein(nn.Module):
         coding_genes = rna[:, self.coding_idxs]
         other_genes = rna[:, self.other_idxs]
 
+        if self.freeze_heads: 
+            self.coding_head.eval()
+            self.other_head.eval()
         coding_hidden = self.coding_head(coding_genes)
         other_hidden = self.other_head(other_genes)
         cat = torch.cat((coding_hidden, other_hidden), dim=-1)
