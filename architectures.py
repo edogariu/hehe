@@ -2,6 +2,7 @@ import math
 from abc import abstractmethod
 from typing import List
 import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -41,7 +42,7 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 
 class DNA2RNA(nn.Module):
     def __init__(self, 
-                 in_dim: int,
+                 num_genes_to_use: int,
                  out_dim: int,
                  num_channels: int,
                  tower_length: int,
@@ -56,22 +57,24 @@ class DNA2RNA(nn.Module):
                  'average': AvgPool,
                  'attention': AttentionPool}
         
-        self.in_dim = in_dim
+        self.num_genes_to_use = num_genes_to_use
         self.out_dim = out_dim
         self.tower_length = tower_length
         self.body_length = body_length
         self.pooling_type = pooling_type
         self.num_channels = num_channels
+
+        # self.gene_idxs = torch.tensor(np.load('data/multi_best_idxs.npy')[:self.num_genes_to_use], dtype=torch.long).to(device)
         
         # stem is (conv, RConvBlock, Pool)
         self.stem = nn.Sequential(
-            nn.Unflatten(1, torch.Size([1, self.in_dim])),
+            nn.Unflatten(1, torch.Size([1, self.num_genes_to_use])),
             nn.Conv1d(1, self.num_channels // 2, kernel_size=15, padding=15 // 2),
             Residual(ConvBlock(self.num_channels // 2, self.num_channels // 2, 1, 1)),
             pools[self.pooling_type](self.num_channels // 2, 2),
         )
         
-        self.tower_dims = [self.in_dim]
+        self.tower_dims = [self.num_genes_to_use]
         for _ in range(self.tower_length + 1):
             if self.pooling_type == 'attention':
                 self.tower_dims.append(math.floor((self.tower_dims[-1] + 1) / 2))
@@ -108,6 +111,7 @@ class DNA2RNA(nn.Module):
         self.body = nn.Sequential(*self.body)
         
     def forward(self, x):
+        # h = x[:, self.gene_idxs]
         h = x
         h = self.stem(h)
         h = self.tower(h)

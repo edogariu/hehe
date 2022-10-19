@@ -7,9 +7,9 @@ import torch.optim as optim
 
 from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlation_loss
 
-# LOSS_FN = negative_correlation_loss
+LOSS_FN = negative_correlation_loss
 # LOSS_FN = F.l1_loss
-LOSS_FN = focal_loss
+# LOSS_FN = focal_loss
 
 """
 This class might look real useless right about now. But I promise its practicing good design and maintainability practices!
@@ -205,7 +205,7 @@ class Model():
             
             assert os.path.isfile(model_filename) and os.path.isfile(opt_filename)
 
-            self._models[k].load_state_dict(torch.load(model_filename))
+            self._models[k].load_state_dict(torch.load(model_filename), strict=True)
             if self._optimizers:
                 self._optimizers[k].load_state_dict(torch.load(opt_filename))
     

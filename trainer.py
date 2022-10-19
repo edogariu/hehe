@@ -64,14 +64,17 @@ class Trainer():
         
         avg_loss = 0.0
         i = 0
-        for x, day, y in tqdm.tqdm(self.train_dataloader):
+        pbar = tqdm.tqdm(self.train_dataloader)
+        for x, day, y in pbar:
             self.model.zero_grad()
             x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
             loss = self.model.loss(x, day, y)
             loss.backward()
-            avg_loss += loss.item()
+            loss = loss.item()
+            avg_loss += loss
             self.model.step_optimizers()
             i += 1
+            pbar.set_postfix({'batch loss': loss})
         avg_loss = avg_loss / i
         self.train_losses[epoch_num] = avg_loss
         print('avg batch training loss for epoch {}: {}'.format(epoch_num, round(avg_loss, 6)))
@@ -87,12 +90,14 @@ class Trainer():
         with torch.no_grad():
             errs = []
             losses = []
-            for x, day, y in tqdm.tqdm(self.val_dataloader):
+            pbar = tqdm.tqdm(self.val_dataloader)
+            for x, day, y in pbar:
                 x = x.to(self.device); day = day.to(self.device); y = y.to(self.device)
                 
                 err, loss = self.model.eval_err(x, day, y)
                 errs.append(err)
                 losses.append(loss)
+                pbar.set_postfix({'batch error': err})
 
         avg_err = np.mean(errs)
         avg_loss = np.mean(losses)

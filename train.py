@@ -1,7 +1,7 @@
 import torch
 
 import architectures
-from datasets import H5Dataset, SparseDataset, NaiveDataset
+from datasets import H5Dataset, SparseDataset, NaiveDataset, MultiDataset
 from trainer import Trainer
 from model import Model
 from utils import count_parameters
@@ -12,31 +12,34 @@ def train():
     # ----------------------------------------------------------------------------------------------------
 
     # ------------------------------------- hyperparameters -------------------------------------------------
-    batch_size = 2
-    model_name = 'dna_to_rna_sigmoid'
+    num_genes_to_use = 20000
+    batch_size = 32
+    model_name = 'dna_to_rna_nc'
 
     initial_lr = 0.04
-    lr_decay_period = 5
-    lr_decay_gamma = 0.5
+    lr_decay_period = 4
+    lr_decay_gamma = 0.6
     weight_decay = 0.0001
 
     num_epochs = 20
-    eval_every = 1
-    patience = 4
+    eval_every = 2
+    patience = 3
     num_tries = 4
 
-    model = architectures.DNA2RNA(228942, 23418, 128, 4, 2, 'max')
+    model = architectures.DNA2RNA(num_genes_to_use, 23418, 64, 2, 2, 'attention')
     # --------------------------------------------------------------------------------------------------------
 
     print('preparing datasets!')
-    train_dataloader = H5Dataset('train', 'multi').get_dataloader(batch_size)
-    val_dataloader = H5Dataset('val', 'multi').get_dataloader(batch_size)
+    train_dataloader = MultiDataset('train', num_genes_to_use).get_dataloader(batch_size)
+    val_dataloader = MultiDataset('val', num_genes_to_use).get_dataloader(batch_size)
     test_dataloader = H5Dataset('test', 'multi').get_dataloader(1)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     # model.load_state_dict(torch.load('checkpoints/models/{}.pth'.format(model_name)))
-    trainer = Trainer(Model(model, model_name), train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
+    model = Model(model, model_name)
+    # model.load_checkpoint()
+    trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
     trainer.train(num_epochs, eval_every, patience, num_tries)
 
     # ----------------------------------------------------------------------------------------------------
