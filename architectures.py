@@ -120,7 +120,7 @@ class DNA2RNA(nn.Module):
         
 class RNA2Protein(nn.Module):
     def __init__(self,
-                 in_dim: int,
+                 num_genes_to_use: int,
                  out_dim: int,
                  hidden_dim: int,
                  coding_head_length: int,
@@ -135,8 +135,8 @@ class RNA2Protein(nn.Module):
 
         Parameters
         ----------
-        in_dim : int
-            dimension of RNAseq gene expression vector
+        num_genes_to_use: int,
+            number of best genes to use as input from RNAseq gene expression vector
         out_dim : int
             dimension of protein surface level vector
         hidden_dim : int
@@ -156,7 +156,7 @@ class RNA2Protein(nn.Module):
         
         assert body_type in ['linear', 'transformer']
         
-        self.in_dim = in_dim
+        self.num_genes_to_use = num_genes_to_use
         self.out_dim = out_dim
         self.coding_head_length = coding_head_length
         self.other_head_length = other_head_length
