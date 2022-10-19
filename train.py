@@ -7,82 +7,31 @@ from model import Model
 from utils import count_parameters
 
 def train():
-    # # ----------------------------------------------------------------------------------------------------
-    # # ------------------------------------   Multiome Training   -----------------------------------------
-    # # ----------------------------------------------------------------------------------------------------
-
-    # # ------------------------------------- hyperparameters -------------------------------------------------
-    # batch_size = 16
-    # model_name = 'dna_to_rna_sigmoid'
-
-    # initial_lr = 0.04
-    # lr_decay_period = 5
-    # lr_decay_gamma = 0.5
-    # weight_decay = 0.0001
-
-    # num_epochs = 20
-    # eval_every = 1
-    # patience = 4
-    # num_tries = 4
-
-    # model = architectures.DNA2RNA()
-    # # --------------------------------------------------------------------------------------------------------
-
-    # print('preparing datasets!')
-    # train_dataloader = H5Dataset('train', 'multi').get_dataloader(batch_size)
-    # val_dataloader = H5Dataset('val', 'multi').get_dataloader(batch_size)
-    # test_dataloader = H5Dataset('test', 'multi').get_dataloader(1)
-
-    # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
-    # # model.load_state_dict(torch.load('checkpoints/models/{}.pth'.format(model_name)))
-    # trainer = Trainer(Model(model, model_name), train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
-    # trainer.train(num_epochs, eval_every, patience, num_tries)
-
-    # # ----------------------------------------------------------------------------------------------------
-    # # ----------------------------------------------------------------------------------------------------
-    # # ----------------------------------------------------------------------------------------------------
-
-
-
-
-
     # ----------------------------------------------------------------------------------------------------
-    # ------------------------------------   CITEseq Training   ------------------------------------------
+    # ------------------------------------   Multiome Training   -----------------------------------------
     # ----------------------------------------------------------------------------------------------------
 
     # ------------------------------------- hyperparameters -------------------------------------------------
-    batch_size = 18
-    model_name = 'test'
+    batch_size = 2
+    model_name = 'dna_to_rna_sigmoid'
 
     initial_lr = 0.04
     lr_decay_period = 5
     lr_decay_gamma = 0.5
     weight_decay = 0.0001
 
-    num_epochs = 100
-    eval_every = 3
-    patience = 3
-    num_tries = 15
+    num_epochs = 20
+    eval_every = 1
+    patience = 4
+    num_tries = 4
 
-    old_model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
-                                  coding_head_length=5, other_head_length=2, body_length=3, 
-                                  body_type='linear', freeze_heads=True)
-    old_model.load_state_dict(torch.load('checkpoints/models/rna_to_protein.pth'))
-
-    model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
-                                    coding_head_length=5, other_head_length=2, body_length=2, 
-                                    body_type='transformer', freeze_heads=True)
-    model.coding_head = old_model.coding_head
-    model.other_head = old_model.other_head
+    model = architectures.DNA2RNA(228942, 23418, 128, 4, 2, 'max')
     # --------------------------------------------------------------------------------------------------------
 
     print('preparing datasets!')
-    train_dataloader = NaiveDataset('train', 'cite').get_dataloader(batch_size, num_workers=4)
-    val_dataloader = SparseDataset('val', 'cite').get_dataloader(batch_size)
-    # train_dataloader = H5Dataset('train', 'cite').get_dataloader(batch_size)
-    # val_dataloader = H5Dataset('val', 'cite').get_dataloader(batch_size)
-    test_dataloader = H5Dataset('test', 'cite').get_dataloader(1)
+    train_dataloader = H5Dataset('train', 'multi').get_dataloader(batch_size)
+    val_dataloader = H5Dataset('val', 'multi').get_dataloader(batch_size)
+    test_dataloader = H5Dataset('test', 'multi').get_dataloader(1)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -93,6 +42,57 @@ def train():
     # ----------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------
+
+
+
+
+
+    # # ----------------------------------------------------------------------------------------------------
+    # # ------------------------------------   CITEseq Training   ------------------------------------------
+    # # ----------------------------------------------------------------------------------------------------
+
+    # # ------------------------------------- hyperparameters -------------------------------------------------
+    # batch_size = 18
+    # model_name = 'test'
+
+    # initial_lr = 0.04
+    # lr_decay_period = 5
+    # lr_decay_gamma = 0.5
+    # weight_decay = 0.0001
+
+    # num_epochs = 100
+    # eval_every = 3
+    # patience = 3
+    # num_tries = 15
+
+    # old_model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
+    #                               coding_head_length=5, other_head_length=2, body_length=3, 
+    #                               body_type='linear', freeze_heads=True)
+    # old_model.load_state_dict(torch.load('checkpoints/models/rna_to_protein.pth'))
+
+    # model = architectures.RNA2Protein(in_dim=22050, out_dim=140, hidden_dim=512, 
+    #                                 coding_head_length=5, other_head_length=2, body_length=2, 
+    #                                 body_type='transformer', freeze_heads=True)
+    # model.coding_head = old_model.coding_head
+    # model.other_head = old_model.other_head
+    # # --------------------------------------------------------------------------------------------------------
+
+    # print('preparing datasets!')
+    # train_dataloader = NaiveDataset('train', 'cite').get_dataloader(batch_size, num_workers=4)
+    # val_dataloader = SparseDataset('val', 'cite').get_dataloader(batch_size)
+    # # train_dataloader = H5Dataset('train', 'cite').get_dataloader(batch_size)
+    # # val_dataloader = H5Dataset('val', 'cite').get_dataloader(batch_size)
+    # test_dataloader = H5Dataset('test', 'cite').get_dataloader(1)
+
+    # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    # # model.load_state_dict(torch.load('checkpoints/models/{}.pth'.format(model_name)))
+    # trainer = Trainer(Model(model, model_name), train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
+    # trainer.train(num_epochs, eval_every, patience, num_tries)
+
+    # # ----------------------------------------------------------------------------------------------------
+    # # ----------------------------------------------------------------------------------------------------
+    # # ----------------------------------------------------------------------------------------------------
 
 
 

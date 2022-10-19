@@ -39,6 +39,81 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
+class DNA2RNA(nn.Module):
+    def __init__(self, 
+                 in_dim: int,
+                 out_dim: int,
+                 num_channels: int,
+                 tower_length: int,
+                 body_length: int,
+                 pooling_type: str,  # one of ['max', 'average', 'attention'] 
+                 ):
+        super(DNA2RNA, self).__init__()
+        
+        assert pooling_type in ['max', 'average', 'attention'] 
+        
+        pools = {'max': MaxPool,
+                 'average': AvgPool,
+                 'attention': AttentionPool}
+        
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.tower_length = tower_length
+        self.body_length = body_length
+        self.pooling_type = pooling_type
+        self.num_channels = num_channels
+        
+        # stem is (conv, RConvBlock, Pool)
+        self.stem = nn.Sequential(
+            nn.Unflatten(1, torch.Size([1, self.in_dim])),
+            nn.Conv1d(1, self.num_channels // 2, kernel_size=15, padding=15 // 2),
+            Residual(ConvBlock(self.num_channels // 2, self.num_channels // 2, 1, 1)),
+            pools[self.pooling_type](self.num_channels // 2, 2),
+        )
+        
+        self.tower_dims = [self.in_dim]
+        for _ in range(self.tower_length + 1):
+            if self.pooling_type == 'attention':
+                self.tower_dims.append(math.floor((self.tower_dims[-1] + 1) / 2))
+            else:
+                self.tower_dims.append(math.ceil((self.tower_dims[-1] + 1) / 2))
+        self.tower_dims = self.tower_dims[1:]
+        self.tower_out_length = self.tower_dims[-1]
+        
+        # tower is tower_length x (ConvBlock, RConvBlock, Pool)
+        tower_channels = exponential_linspace_int(start=self.num_channels // 2, end=self.num_channels, num=self.tower_length, divisible_by=1)
+        self.tower = []
+        for i in range(len(tower_channels)):
+            c_in = tower_channels[i - 1] if i > 1 else self.num_channels // 2
+            c_out = tower_channels[i]
+            level = nn.Sequential(
+                ConvBlock(c_in, c_out, 3, 1),
+                Residual(ConvBlock(c_out, c_out, 1, 1)),
+                pools[self.pooling_type](c_out, 2),
+            )
+            self.tower.append(level)
+        self.tower.append(ConvBlock(c_out, 1, 1, 1))
+        self.tower.append(nn.Flatten(1, 2))
+        self.tower = nn.Sequential(*self.tower)
+        
+        # body is whatever we want it to be :)
+        body_layer_dims = exponential_linspace_int(start=self.tower_out_length, end=self.out_dim, num=self.body_length + 1, divisible_by=1)
+        self.body = []
+        for i in range(self.body_length):
+            in_dim = body_layer_dims[i]
+            out_dim = body_layer_dims[i + 1]
+            self.body.append(nn.Linear(in_dim, out_dim))
+            self.body.append(nn.ReLU())
+        self.body.pop()
+        self.body = nn.Sequential(*self.body)
+        
+    def forward(self, x):
+        h = x
+        h = self.stem(h)
+        h = self.tower(h)
+        h = self.body(h)
+        return h
+        
 class RNA2Protein(nn.Module):
     def __init__(self,
                  in_dim: int,

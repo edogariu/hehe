@@ -8,9 +8,6 @@ from architectures import RNA2Protein
 from model import Model
 from datasets import SubmissionDataset
 
-cite_model = Model(RNA2Protein(22050, 140, 512, 5, 2, 2, 'transformer'), 'rna_to_protein_transformer')
-cite_model.load_checkpoint()
-
 def generate_submissions(cite_model: Model, multi_model: Model):
     print('reading quickstart csv')
     SPLIT = 6812820  # index of the first multi row (index after last cite row)
@@ -44,5 +41,12 @@ def generate_submissions(cite_model: Model, multi_model: Model):
     assert not submission.isna().any()
     return submission
     
-submission = generate_submissions(cite_model, None)
-submission.to_csv('submissions/submission.csv')
+if __name__ == '__main__':
+    cite_model = Model(RNA2Protein(22050, 140, 512, 5, 2, 2, 'transformer'), 'rna_to_protein_transformer')
+    cite_model.load_checkpoint()
+    
+    multi_model = None
+    
+    submission = generate_submissions(cite_model, multi_model)
+    print('writing submission to csv')
+    submission.to_csv('submissions/submission.csv')
