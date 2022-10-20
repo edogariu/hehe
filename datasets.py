@@ -20,7 +20,7 @@ class H5Dataset(D.Dataset):
     """
     To construct dataloader from original `.h5` files
     """
-    def __init__(self, split: str, mode: str, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.Dataset from the original `.h5` files.
 
@@ -30,6 +30,8 @@ class H5Dataset(D.Dataset):
             which split to use. must be one of `['train', 'val', 'test', 'all']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
+        num_genes_to_use : int
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
         n_data : int
             number of data points to use
         days : List[int]
@@ -77,6 +79,8 @@ class H5Dataset(D.Dataset):
 
         self.length = len(self.idxs)
         assert self.length != 0
+        
+        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
                     
     def __len__(self):
         return self.length
@@ -84,7 +88,7 @@ class H5Dataset(D.Dataset):
     def __getitem__(self, index: int):
         index = self.idxs[index]
         day = self.metadata.iloc[index]['day']
-        inputs = (self.inputs_h5[index], day)  # could add more to inputs here
+        inputs = (self.inputs_h5[index][self.gene_idxs], day)  # could add more to inputs here
         targets = self.targets_h5[index]
         
         return (*inputs, targets)
@@ -96,7 +100,7 @@ class SparseDataset(D.Dataset):
     """
     To construct dataloader from sparse CSR `.npz` files (much faster `__next__()`)
     """
-    def __init__(self, split: str, mode: str, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.Dataset from the sparse CSR `.npz` files.
 
@@ -106,6 +110,8 @@ class SparseDataset(D.Dataset):
             which split to use. must be one of `['train', 'val', 'test', 'all']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
+        num_genes_to_use : int
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
         n_data : int
             number of data points to use
         days : List[int]
@@ -150,82 +156,9 @@ class SparseDataset(D.Dataset):
         
         self.length = len(self.idxs)
         assert self.length != 0
-                    
-    def __len__(self):
-        return self.length
-    
-    def __getitem__(self, index: int):
-        index = self.idxs[index]
-        day = self.metadata.iloc[index]['day']
-        inputs = (self.inputs_npz[index].toarray()[0], day)  # could add more to inputs here
-        targets = self.targets_npz[index].toarray()[0]
         
-        return (*inputs, targets)
-    
-    def get_dataloader(self, batch_size: int, pin_memory=True, num_workers=0, shuffle=True):
-        return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=False, pin_memory=pin_memory, num_workers=num_workers)
-
-class MultiDataset(D.Dataset):
-    """
-    To construct dataloader from sparse CSR `.npz` files, indexed by the top `num_genes_to_read` indices (much faster `__next__()`)
-    """
-    def __init__(self, split: str, num_genes_to_read: int, n_data=1e9, days=[2, 3, 4, 7]):
-        """
-        Creates torch.utils.data.Dataset from the sparse CSR `.npz` files.
-
-        Parameters
-        ----------
-        split : str
-            which split to use. must be one of `['train', 'val', 'test', 'all']`
-        num_genes_to_read : int
-            number of top genes from the ATAC-seq data to read
-        n_data : int
-            number of data points to use
-        days : List[int]
-            which day to draw data from. must be a subset of `[2, 3, 4, 7]`
-        """
-        super(D.Dataset, self).__init__()
-        
-        assert split in ['train', 'val', 'test', 'all']
-        
-        self.split = split
-        mode = 'multi'
-        self.days = days
-        
-        inputs_file = os.path.join(TOP_DIR_NAME, 'data_sparse', f'train_{mode}_inputs_sparse.npz')
-        assert os.path.isfile(inputs_file)
-        self.inputs_npz = ss.load_npz(inputs_file)
-        
-        # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
-        ids = np.array(h5py.File(os.path.join(TOP_DIR_NAME, 'data', f'train_{mode}_inputs.h5'), 'r')[f'train_{mode}_inputs']['axis1']).astype(str)
-        self.metadata = METADATA.loc[ids]
-        
-        targets_file = os.path.join(TOP_DIR_NAME, 'data_sparse', f'train_{mode}_targets_sparse.npz')
-        assert os.path.isfile(targets_file)
-        self.targets_npz = ss.load_npz(targets_file)
-        assert self.inputs_npz.shape[0] == self.targets_npz.shape[0], 'inputs and targets arent same size??'
-        
-        # create correct split       
-        np.random.seed(0)  # to ensure same train, val, test splits every time
-        self.length = self.inputs_npz.shape[0]
-        self.idxs = np.random.permutation(self.length)
-        start, stop = SPLIT_INTERVALS[self.split]
-        start, stop = int(start * self.length), int(stop * self.length)
-        self.idxs = self.idxs[start: stop]
-        np.random.seed()  # re-random the seed
-        
-        # grab only points from the given days
-        self.idxs = self.idxs[np.argwhere(np.isin(self.metadata['day'][self.idxs], self.days)).ravel()]
-        
-        if n_data < self.length:
-            self.idxs = np.random.permutation(self.length)[:n_data]
-        
-        self.length = len(self.idxs)
-        assert self.length != 0
-
-        # read best indices and index with only them
-        best_idxs = np.load('data/multi_best_idxs.npy')[:num_genes_to_read]
-        self.inputs_npz = self.inputs_npz[:, best_idxs]
+        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+        self.inputs_npz = self.inputs_npz[:, self.gene_idxs]
                     
     def __len__(self):
         return self.length
@@ -245,7 +178,7 @@ class NaiveDataset(D.Dataset):
     """
     Simply places the entire dataset into a big tensor.
     """
-    def __init__(self, split: str, mode: str, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.TensorDataset from the entire dataset.
 
@@ -255,6 +188,8 @@ class NaiveDataset(D.Dataset):
             which split to use. must be one of `['train', 'val', 'test', 'all']`
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
+        num_genes_to_use : int
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
         n_data : int
             number of data points to use
         days : List[int]
@@ -300,7 +235,9 @@ class NaiveDataset(D.Dataset):
         self.length = len(self.idxs)
         assert self.length != 0
 
-        x = self.inputs_npz[self.idxs]
+        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+
+        x = self.inputs_npz[self.idxs, self.gene_idxs]
         y = self.targets_npz[self.idxs]
         days = [self.metadata.iloc[index]['day'] for index in self.idxs]
         
@@ -308,6 +245,8 @@ class NaiveDataset(D.Dataset):
         y = torch.tensor(y.toarray())
         days = torch.tensor(days)
         self.d = D.TensorDataset(x, days, y)
+        
+        del self.inputs_npz, self.targets_npz, self.gene_idxs
                     
     def __len__(self):
         return self.length
@@ -328,7 +267,7 @@ class SubmissionDataset(D.Dataset):
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         num_genes_to_use : int
-            number of genes to use for inference
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
         """
         super(D.Dataset, self).__init__()
         
@@ -347,17 +286,14 @@ class SubmissionDataset(D.Dataset):
         self.inputs_h5 = self.inputs_h5['block0_values']
         self.length = len(self.inputs_h5)
         
-        if self.mode == 'multi':
-            self.idxs = np.load('data/multi_best_idxs.npy')[:num_genes_to_use]
-        else:
-            self.idxs = np.arange(22050)
+        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
 
     def __len__(self):
         return self.length
     
     def __getitem__(self, index: int):
         day = self.metadata.iloc[index]['day']
-        inputs = (self.inputs_h5[index][self.idxs], day)  # could add more to inputs here
+        inputs = (self.inputs_h5[index][self.gene_idxs], day)  # could add more to inputs here
         
         return inputs
             
