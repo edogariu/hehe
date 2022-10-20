@@ -1,7 +1,7 @@
 import torch
 
 import architectures
-from datasets import H5Dataset, SparseDataset, NaiveDataset, MultiDataset
+from datasets import H5Dataset, SparseDataset, NaiveDataset
 from trainer import Trainer
 from model import Model
 from utils import count_parameters
@@ -14,7 +14,7 @@ def train():
     # ------------------------------------- hyperparameters -------------------------------------------------
     num_genes_to_use = 20000
     batch_size = 32
-    model_name = 'dna_to_rna_nc'
+    model_name = 'dna_to_rna_silly'
 
     initial_lr = 0.04
     lr_decay_period = 4
@@ -26,12 +26,13 @@ def train():
     patience = 3
     num_tries = 4
 
-    model = architectures.DNA2RNA(num_genes_to_use, 23418, 64, 2, 2, 'attention')
+    # model = architectures.DNA2RNA(num_genes_to_use, 23418, 64, 2, 2, 'attention')
+    model = architectures.SillyDNA2RNA(228942, 23418, 2, 2)
     # --------------------------------------------------------------------------------------------------------
 
     print('preparing datasets!')
-    train_dataloader = MultiDataset('train', num_genes_to_use).get_dataloader(batch_size)
-    val_dataloader = MultiDataset('val', num_genes_to_use).get_dataloader(batch_size)
+    train_dataloader = H5Dataset('train', 'multi').get_dataloader(batch_size)
+    val_dataloader = H5Dataset('val', 'multi').get_dataloader(batch_size)
     test_dataloader = H5Dataset('test', 'multi').get_dataloader(1)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')

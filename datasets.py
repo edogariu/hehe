@@ -20,7 +20,7 @@ class H5Dataset(D.Dataset):
     """
     To construct dataloader from original `.h5` files
     """
-    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use=-1, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.Dataset from the original `.h5` files.
 
@@ -31,7 +31,7 @@ class H5Dataset(D.Dataset):
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         num_genes_to_use : int
-            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries). if -1, uses all
         n_data : int
             number of data points to use
         days : List[int]
@@ -80,7 +80,7 @@ class H5Dataset(D.Dataset):
         self.length = len(self.idxs)
         assert self.length != 0
         
-        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+        self.gene_idxs = np.load('pkls/{}_best_idxs.npy'.format(mode))[:num_genes_to_use] if num_genes_to_use > 0 else np.arange(228942 if mode == 'multi' else 22050)
                     
     def __len__(self):
         return self.length
@@ -100,7 +100,7 @@ class SparseDataset(D.Dataset):
     """
     To construct dataloader from sparse CSR `.npz` files (much faster `__next__()`)
     """
-    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use=-1, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.Dataset from the sparse CSR `.npz` files.
 
@@ -111,7 +111,7 @@ class SparseDataset(D.Dataset):
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         num_genes_to_use : int
-            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries). if -1, uses all
         n_data : int
             number of data points to use
         days : List[int]
@@ -157,7 +157,7 @@ class SparseDataset(D.Dataset):
         self.length = len(self.idxs)
         assert self.length != 0
         
-        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+        self.gene_idxs = np.load('pkls/{}_best_idxs.npy'.format(mode))[:num_genes_to_use] if num_genes_to_use > 0 else np.arange(228942 if mode == 'multi' else 22050)
         self.inputs_npz = self.inputs_npz[:, self.gene_idxs]
                     
     def __len__(self):
@@ -178,7 +178,7 @@ class NaiveDataset(D.Dataset):
     """
     Simply places the entire dataset into a big tensor.
     """
-    def __init__(self, split: str, mode: str, num_genes_to_use: int, n_data=1e9, days=[2, 3, 4, 7]):
+    def __init__(self, split: str, mode: str, num_genes_to_use=-1, n_data=1e9, days=[2, 3, 4, 7]):
         """
         Creates torch.utils.data.TensorDataset from the entire dataset.
 
@@ -189,7 +189,7 @@ class NaiveDataset(D.Dataset):
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         num_genes_to_use : int
-            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries). if -1, uses all
         n_data : int
             number of data points to use
         days : List[int]
@@ -235,7 +235,7 @@ class NaiveDataset(D.Dataset):
         self.length = len(self.idxs)
         assert self.length != 0
 
-        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+        self.gene_idxs = np.load('pkls/{}_best_idxs.npy'.format(mode))[:num_genes_to_use] if num_genes_to_use > 0 else np.arange(228942 if mode == 'multi' else 22050)
 
         x = self.inputs_npz[self.idxs, self.gene_idxs]
         y = self.targets_npz[self.idxs]
@@ -258,7 +258,7 @@ class SubmissionDataset(D.Dataset):
     """
     To construct dataloader from original `.h5` files
     """
-    def __init__(self, mode: str, num_genes_to_use: int):
+    def __init__(self, mode: str, num_genes_to_use=-1):
         """
         Creates torch.utils.data.Dataset from the original `.h5` files.
 
@@ -267,7 +267,7 @@ class SubmissionDataset(D.Dataset):
         mode : str
             which mode to get data from. must be one of `['multi', 'cite']`
         num_genes_to_use : int
-            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries)
+            how many genes from the input mode to use (uses top `num_genes_to_use` with most variance and nonzero entries). If -1, uses all the genes
         """
         super(D.Dataset, self).__init__()
         
@@ -286,7 +286,7 @@ class SubmissionDataset(D.Dataset):
         self.inputs_h5 = self.inputs_h5['block0_values']
         self.length = len(self.inputs_h5)
         
-        self.gene_idxs = np.load('data/{}_best_idxs.npy'.format(mode))[:num_genes_to_use]
+        self.gene_idxs = np.load('pkls/{}_best_idxs.npy'.format(mode))[:num_genes_to_use] if num_genes_to_use > 0 else np.arange(228942 if mode == 'multi' else 22050)
 
     def __len__(self):
         return self.length

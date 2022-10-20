@@ -1,5 +1,7 @@
+import pickle
 import math
 from abc import abstractmethod
+from re import S
 from typing import List
 import pandas as pd
 import numpy as np
@@ -39,6 +41,61 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO ADD DILATED TO ENCODR/decodr evan ur a goon for not doing this yet if u forget i will never forgive u, use FPN over dilated layerr
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
+
+class SillyDNA2RNA(nn.Module):
+    def __init__(self, 
+                 in_dim: int,
+                 out_dim: int,
+                 depth: int,
+                 width_factor: int,
+                 ):
+        super(SillyDNA2RNA, self).__init__()
+
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+
+        with open('pkls/coding_idxs.pkl', 'rb') as f:
+            self.idxs = pickle.load(f)
+            assert len(self.idxs) == out_dim
+
+        print('making all the mini models')
+        models = []
+        import tqdm
+        for v in tqdm.tqdm(self.idxs.values()):
+            if type(v) == int:
+                models.append(nn.Identity())
+            else:
+                l = len(v)
+                specific_model_dims = exponential_linspace_int(l, width_factor * l, depth)
+                specific_model_dims.extend(specific_model_dims[::-1][1:])
+                specific_model_dims.append(1)
+                specific_model = []
+                for i in range(len(specific_model_dims) - 1):
+                    in_dim = specific_model_dims[i]
+                    out_dim = specific_model_dims[i + 1]
+                    specific_model.append(nn.Linear(in_dim, out_dim))
+                    specific_model.append(nn.ReLU())
+                specific_model.pop() # remove last relu
+                models.append(nn.Sequential(*specific_model))
+        print('done!')
+        self.models = nn.ModuleList(models)
+
+    def __str__(self):
+        return 'silly model with {} parameters'.format(count_parameters(self))
+    
+    def forward(self, x):
+        batch_size = x.shape[0]
+        outs = []
+        for i in range(self.out_dim):
+            idxs = self.idxs[i]
+            if type(idxs) == int:
+                outs.append(torch.zeros((batch_size, 1)).to(device))
+                continue
+            model = self.models[i]
+            inputs = x[:, idxs]
+            outs.append(model(inputs))
+        out = torch.cat(outs, dim=1)
+        return out
 
 class DNA2RNA(nn.Module):
     def __init__(self, 

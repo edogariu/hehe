@@ -158,7 +158,7 @@ class Model():
         torch.tensor
             loss
         """
-        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble and NC loss over model output
+        pred = self._models[self._model_name](x)  # default assumes only one model in ensemble
         loss  = LOSS_FN(pred, y)
         return loss
     
@@ -187,7 +187,7 @@ class Model():
             loss
         """
         with torch.no_grad():
-            pred = self._models[self._model_name](x) # default assumes only one model in ensemble and NC loss over model output
+            pred = self._models[self._model_name](x) # default assumes only one model in ensemble
             error = LOSS_FN(pred, y).item()
         return error, error
     
