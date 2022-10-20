@@ -132,12 +132,12 @@ class SillyModel(Model):
 def run():
     # ------------------------------------- hyperparameters -------------------------------------------------
 
-    batch_size = 128
+    batch_size = 144
 
     initial_lr = 0.04
     lr_decay_period = 4
     lr_decay_gamma = 0.6
-    weight_decay = 0.0001
+    weight_decay = 0.001
 
     num_epochs = 20
     eval_every = 2
@@ -150,7 +150,9 @@ def run():
     train_dataset = SillySparseDataset('train', 'multi')
     val_dataset = SillySparseDataset('val', 'multi')
 
-    for chrom in RNA_CHROMOSOME_LENS.keys():
+    chroms_to_train = ['chr17']
+
+    for chrom in chroms_to_train:
         print('TRAINGING FOR {}'.format(chrom))
         model = SillyModel(SillyDNA2RNA(chrom, 3, 0.5), chrom)
         train_dataloader = train_dataset.get_dataloader(batch_size, chrom)

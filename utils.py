@@ -24,6 +24,10 @@ def correlation_score(y_hat, y):
         corrsum += np.corrcoef(y[i], y_hat[i])[1, 0]
     return corrsum / len(y)
 
+def nonzero_l1_loss(y_hat, y):
+    mask = y != 0
+    return F.l1_loss(y_hat[mask], y[mask])
+
 def negative_correlation_loss(y_hat, y):
     """
     Negative correlation loss function for tensors

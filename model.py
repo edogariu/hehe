@@ -5,10 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlation_loss
+from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlation_loss, nonzero_l1_loss
 
-LOSS_FN = negative_correlation_loss
+# LOSS_FN = negative_correlation_loss
 # LOSS_FN = F.l1_loss
+LOSS_FN = nonzero_l1_loss
 # LOSS_FN = focal_loss
 
 """
