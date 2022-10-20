@@ -13,7 +13,7 @@ from trainer import Trainer
 
 """
 WHAT IF WE INFERENCED BY CHROMOSOME???????
-chr1, ..., chr22, chrx, chrx  --- 24 models
+chr1, ..., chr22, chrx, chry  --- 24 models
 """
 
 RNA_CHROMOSOME_LENS = {'chr17': 1359, 'chr1': 2276, 'chr2': 1575, 'chrx': 713, 'chr22': 570, 'chr16': 1114, 'chr12': 1295, 'chr11': 1259, 'chr19': 1544, 'chr7': 1081, 'chr14': 795, 'chr10': 881, 'chr13': 433, 'chr3': 1337, 'chr6': 1197, 'chr4': 906, 'chr15': 835, 'chr5': 1057, 'chr20': 569, 'chr8': 921, 'chr9': 856, 'chr18': 424, 'chr21': 283, 'chry': 22, 'chrmt': 13, 'n/a': 103}
@@ -24,6 +24,7 @@ class SillyDNA2RNA(nn.Module):
                  chrom: str,
                  depth: int,
                  width_factor: float,
+                 use_bn: bool
                  ):
         super(SillyDNA2RNA, self).__init__()
 
@@ -45,6 +46,8 @@ class SillyDNA2RNA(nn.Module):
             for i in range(len(model_dims) - 1):
                 in_dim = model_dims[i]
                 out_dim = model_dims[i + 1]
+                if use_bn and i - 1 == depth // 2:
+                    model.append(nn.BatchNorm1d(in_dim))
                 model.append(nn.Linear(in_dim, out_dim))
                 model.append(nn.ReLU())
             model.pop() # remove last relu
@@ -132,14 +135,16 @@ class SillyModel(Model):
 def run():
     # ------------------------------------- hyperparameters -------------------------------------------------
 
+    model_type = 'sigmoid'  # shoudl be one of ['sigmoid', 'regression']
+
     batch_size = 144
 
-    initial_lr = 0.04
-    lr_decay_period = 4
-    lr_decay_gamma = 0.6
-    weight_decay = 0.001
+    initial_lr = 0.08
+    lr_decay_period = 6
+    lr_decay_gamma = 0.5
+    weight_decay = 0.0004
 
-    num_epochs = 20
+    num_epochs = 16
     eval_every = 2
     patience = 3
     num_tries = 4
@@ -150,11 +155,12 @@ def run():
     train_dataset = SillySparseDataset('train', 'multi')
     val_dataset = SillySparseDataset('val', 'multi')
 
-    chroms_to_train = ['chr17']
+    chroms_to_train = ['chr17', 'chr1', 'chr2', 'chrx', 'chr22', 'chr16', 'chr12', 'chr11', 'chr19', 'chr7', 'chr14', 'chr10', 'chr13', 
+                       'chr3', 'chr4', 'chr5', 'chr6', 'chr20', 'chr8', 'chr9', 'chr18', 'chr21', 'chry']
 
     for chrom in chroms_to_train:
         print('TRAINGING FOR {}'.format(chrom))
-        model = SillyModel(SillyDNA2RNA(chrom, 3, 0.5), chrom)
+        model = SillyModel(SillyDNA2RNA(chrom, 5, 0.5, use_bn=True), '{}_{}'.format(chrom, model_type))
         train_dataloader = train_dataset.get_dataloader(batch_size, chrom)
         val_dataloader = val_dataset.get_dataloader(batch_size, chrom)
         trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)

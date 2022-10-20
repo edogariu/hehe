@@ -62,7 +62,7 @@ def focal_loss(y_hat, y):
     pos_inds = y.eq(1).float()
     neg_inds = y.lt(1).float()
 
-    neg_weights = torch.pow(1 - y, 4)   # change this weight for balance of pos/neg loss
+    neg_weights = torch.pow(1 - y, 5)   # change this weight for balance of pos/neg loss
     # clamp min value is set to 1e-12 to maintain the numerical stability
     y_hat = torch.clamp(y_hat, 1e-12)
 
@@ -78,6 +78,11 @@ def focal_loss(y_hat, y):
     else:
         loss = -(pos_loss + neg_loss) / num_pos
     return loss
+
+def bce_loss(y_hat, y):
+    y = (y != 0).float()
+    y_hat = torch.sigmoid(y_hat)
+    return F.binary_cross_entropy(y_hat, y)
 
 # -----------------------------------------------------------------------------
 # -------------------------------------  NN UTILS  ----------------------------
