@@ -58,7 +58,7 @@ def focal_loss(y_hat, y):
     pos_inds = y.eq(1).float()
     neg_inds = y.lt(1).float()
 
-    neg_weights = torch.pow(1 - y, 3)   # change this weight for balance of pos/neg loss
+    neg_weights = torch.pow(1 - y, 4)   # change this weight for balance of pos/neg loss
     # clamp min value is set to 1e-12 to maintain the numerical stability
     y_hat = torch.clamp(y_hat, 1e-12)
 
