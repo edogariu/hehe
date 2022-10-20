@@ -155,10 +155,11 @@ def run():
     train_dataset = SillySparseDataset('train', 'multi')
     val_dataset = SillySparseDataset('val', 'multi')
 
-    chroms_to_train = ['chr17', 'chr1', 'chr2', 'chrx', 'chr22', 'chr16', 'chr12', 'chr11', 'chr19', 'chr7', 'chr14', 'chr10', 'chr13', 
-                       'chr3', 'chr4', 'chr5', 'chr6', 'chr20', 'chr8', 'chr9', 'chr18', 'chr21', 'chry']
+    chroms_to_train = ['chr1', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', '!chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
+                       'chr2', 'chr20', 'chr21', 'chr22', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chrx', 'chry']
 
     for chrom in chroms_to_train:
+        if '!' in chrom: continue  # skip ones we don't want to train
         print('TRAINGING FOR {}'.format(chrom))
         model = SillyModel(SillyDNA2RNA(chrom, 5, 0.5, use_bn=True), '{}_{}'.format(chrom, model_type))
         train_dataloader = train_dataset.get_dataloader(batch_size, chrom)
