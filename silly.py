@@ -159,8 +159,8 @@ def run():
     # train_dataset = SillyH5Dataset('train', 'multi')
     # val_dataset = SillyH5Dataset('val', 'multi')
 
-    chroms_to_train = ['chr1', '!chr10', '!chr11', '!chr12', '!chr13', '!chr14', '!chr15', '!chr16', '!chr17', 'chr18', 'chr19', 
-                       'chr2', 'chr20', 'chr21', 'chr22', '!chr3', '!chr4', '!chr5', '!chr6', '!chr7', '!chr8', '!chr9', '!chrx', '!chry']
+    chroms_to_train = ['!chr1', '!chr10', '!chr11', 'chr12', '!chr13', '!chr14', '!chr15', '!chr16', '!chr17', '!chr18', '!chr19', 
+                       '!chr2', '!chr20', '!chr21', 'chr22', 'chr3', '!chr4', '!chr5', '!chr6', '!chr7', '!chr8', '!chr9', '!chrx', '!chry']
 
     for chrom in chroms_to_train:
         if '!' in chrom: continue  # skip ones we don't want to train
@@ -173,3 +173,68 @@ def run():
 
 if __name__ == '__main__':
     run()
+
+    # import pickle
+    # import pandas as pd
+    # multi_keys = list(pd.read_hdf('data/train_multi_inputs.h5', start=0, stop=1).keys())
+    # cite_keys = list(pd.read_hdf('data/train_multi_targets.h5', start=0, stop=1).keys())
+    # with open('pkls/partition.pkl', 'rb') as f:
+    #     ret = pickle.load(f)
+    #     champ = None
+    #     best = 0
+    #     for r in ret:
+    #         if len(r[0]) > 4:
+    #             if len(r[1]) > best:
+    #                 best = len(r[1])
+    #                 champ = r
+    #     rna_idxs = np.sort([cite_keys.index(k) for k in champ[0]])
+    #     dna_idxs = np.sort([multi_keys.index(k) for k in champ[1]])
+    # from datasets import H5Dataset, SparseDataset
+    # from model import Model
+    # import torch
+    # import torch.nn as nn
+    # import tqdm
+    # from utils import focal_loss, device
+
+    # # ------------------------------------- hyperparameters -------------------------------------------------
+
+    # batch_size = 144
+
+    # initial_lr = 0.02
+    # lr_decay_period = 4
+    # lr_decay_gamma = 0.5
+    # weight_decay = 0.0004
+
+    # num_epochs = 11
+    # eval_every = 2
+    # patience = 3
+    # num_tries = 4
+
+    # # --------------------------------------------------------------------------------------------------------
+
+    # model = nn.Sequential(
+    #     nn.Linear(186, 200),
+    #     nn.ReLU(),
+    #     nn.Linear(200, 50),
+    #     nn.ReLU(),
+    #     nn.Linear(50, 27)
+    # )
+    # model.to(device)
+    # model.train()
+
+    # train_dataloader = SparseDataset('train', 'multi').get_dataloader(batch_size)
+    # val_dataloader = SparseDataset('val', 'multi').get_dataloader(batch_size)
+
+    # optim = torch.optim.Adam(model.parameters(), initial_lr, weight_decay=weight_decay)
+    # for _ in range(num_epochs):
+    #     avg_loss = 0.0
+    #     for x, day, y in tqdm.tqdm(train_dataloader):
+    #         optim.zero_grad()
+    #         out = torch.sigmoid(model(x[:, dna_idxs].to(device)))
+    #         y = y[:, rna_idxs].to(device)
+    #         loss = torch.nn.functional.binary_cross_entropy(out, y)
+    #         loss.backward()
+    #         avg_loss += loss.cpu().item()
+    #         optim.step()
+    #     avg_loss /= len(train_dataloader)
+    #     print(avg_loss)
