@@ -7,10 +7,10 @@ import torch.optim as optim
 
 from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlation_loss, nonzero_l1_loss, bce_loss
 
-# LOSS_FN = negative_correlation_loss
+LOSS_FN = negative_correlation_loss
 # LOSS_FN = F.l1_loss
 # LOSS_FN = nonzero_l1_loss
-LOSS_FN = focal_loss
+# LOSS_FN = focal_loss
 # LOSS_FN = bce_loss
 
 EVAL_FN = negative_correlation_loss
