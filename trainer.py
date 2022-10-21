@@ -164,7 +164,8 @@ class Trainer():
             except KeyboardInterrupt:
                 print('Catching keyboard interrupt!!!')
                 self.finish_up(e)
-                exit(0)
+                return self.model
+                # exit(0)
         self.finish_up(num_epochs)
         return self.model
 

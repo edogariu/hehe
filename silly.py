@@ -46,8 +46,9 @@ class SillyDNA2RNA(nn.Module):
             for i in range(len(model_dims) - 1):
                 in_dim = model_dims[i]
                 out_dim = model_dims[i + 1]
-                if use_bn and i - 1 == depth // 2:
-                    model.append(nn.BatchNorm1d(in_dim))
+                if i - 1 == depth // 2:
+                    if use_bn: model.append(nn.BatchNorm1d(in_dim))
+                    model.append(nn.Dropout(0.04))
                 model.append(nn.Linear(in_dim, out_dim))
                 model.append(nn.ReLU())
             model.pop() # remove last relu
@@ -139,12 +140,12 @@ def run():
 
     batch_size = 144
 
-    initial_lr = 0.08
-    lr_decay_period = 6
+    initial_lr = 0.02
+    lr_decay_period = 4
     lr_decay_gamma = 0.5
     weight_decay = 0.0004
 
-    num_epochs = 16
+    num_epochs = 11
     eval_every = 2
     patience = 3
     num_tries = 4
@@ -154,9 +155,12 @@ def run():
     print('preparing datasets')
     train_dataset = SillySparseDataset('train', 'multi')
     val_dataset = SillySparseDataset('val', 'multi')
+    
+    # train_dataset = SillyH5Dataset('train', 'multi')
+    # val_dataset = SillyH5Dataset('val', 'multi')
 
-    chroms_to_train = ['chr1', 'chr10', 'chr11', 'chr12', 'chr13', 'chr14', '!chr15', 'chr16', 'chr17', 'chr18', 'chr19', 
-                       'chr2', 'chr20', 'chr21', 'chr22', 'chr3', 'chr4', 'chr5', 'chr6', 'chr7', 'chr8', 'chr9', 'chrx', 'chry']
+    chroms_to_train = ['chr1', '!chr10', '!chr11', '!chr12', '!chr13', '!chr14', '!chr15', '!chr16', '!chr17', 'chr18', 'chr19', 
+                       'chr2', 'chr20', 'chr21', 'chr22', '!chr3', '!chr4', '!chr5', '!chr6', '!chr7', '!chr8', '!chr9', '!chrx', '!chry']
 
     for chrom in chroms_to_train:
         if '!' in chrom: continue  # skip ones we don't want to train

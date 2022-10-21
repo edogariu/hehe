@@ -13,7 +13,7 @@ from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlati
 # LOSS_FN = focal_loss
 LOSS_FN = bce_loss
 
-EVAL_FN = LOSS_FN
+EVAL_FN = negative_correlation_loss
 
 """
 This class might look real useless right about now. But I promise its practicing good design and maintainability practices!
@@ -94,7 +94,7 @@ class Model():
         self._optimizers = {}
         self._lr_schedulers = {}
         for k in self._models.keys():
-            self._optimizers[k] = optim.SGD(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
+            self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
             self._lr_schedulers[k] = optim.lr_scheduler.StepLR(self._optimizers[k], step_size=lr_decay_period[k], gamma=lr_decay_gamma[k], verbose=True)
     
     def step_optimizers(self):
@@ -192,8 +192,9 @@ class Model():
         """
         with torch.no_grad():
             pred = self._models[self._model_name](x) # default assumes only one model in ensemble
-            error = EVAL_FN(pred, y).item()
-        return error, error
+            error = LOSS_FN(pred, y).item()
+            loss = EVAL_FN(pred, y).item()
+        return error, loss
     
     def __str__(self) -> str:
         s = '{} with the following parts:\n\n'.format(self._model_name)
