@@ -1,10 +1,7 @@
-import pickle
 import math
 from abc import abstractmethod
-from re import S
 from typing import List
 import pandas as pd
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,60 +39,29 @@ class UsesDaysSequential(nn.Sequential, UsesDays):
 # TODO EVANN U NEED TO ADD DAY EMBEDDINGS AS INPUT EVANN
 # TODO positional embeaingia
 
-class SillyDNA2RNA(nn.Module):
-    def __init__(self, 
-                 in_dim: int,
-                 out_dim: int,
-                 depth: int,
-                 width_factor: int,
-                 ):
-        super(SillyDNA2RNA, self).__init__()
+class FPN(nn.Module):
+    def __init__(self, pyramid_layers: nn.ModuleList, body: nn.Module):
+        """
+        Feature pyramid network over the pyramid layers, fed into the body.
 
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-
-        with open('pkls/coding_idxs.pkl', 'rb') as f:
-            self.idxs = pickle.load(f)
-            assert len(self.idxs) == out_dim
-
-        print('making all the mini models')
-        models = []
-        import tqdm
-        for v in tqdm.tqdm(self.idxs.values()):
-            if type(v) == int:
-                models.append(nn.Identity())
-            else:
-                l = len(v)
-                specific_model_dims = exponential_linspace_int(l, width_factor * l, depth)
-                specific_model_dims.extend(specific_model_dims[::-1][1:])
-                specific_model_dims.append(1)
-                specific_model = []
-                for i in range(len(specific_model_dims) - 1):
-                    in_dim = specific_model_dims[i]
-                    out_dim = specific_model_dims[i + 1]
-                    specific_model.append(nn.Linear(in_dim, out_dim))
-                    specific_model.append(nn.ReLU())
-                specific_model.pop() # remove last relu
-                models.append(nn.Sequential(*specific_model))
-        print('done!')
-        self.models = nn.ModuleList(models)
-
-    def __str__(self):
-        return 'silly model with {} parameters'.format(count_parameters(self))
-    
+        Parameters
+        ----------
+        pyramid_layers : nn.ModuleList
+            Layers whose outputs will be concatenated and fed into the body
+        body : nn.Module
+            body of network, whose input is of dimension `input_dim + [l.out_dim for l in pyramid_layers].sum()`
+        """
+        super().__init__()
+        self.layers = pyramid_layers
+        self.body = body
+        
     def forward(self, x):
-        batch_size = x.shape[0]
-        outs = []
-        for i in range(self.out_dim):
-            idxs = self.idxs[i]
-            if type(idxs) == int:
-                outs.append(torch.zeros((batch_size, 1)).to(device))
-                continue
-            model = self.models[i]
-            inputs = x[:, idxs]
-            outs.append(model(inputs))
-        out = torch.cat(outs, dim=1)
-        return out
+        outs = [x]
+        for layer in self.layers:
+            outs.append(layer(outs[-1]))
+        cat = torch.cat(outs, dim=-1)
+        return self.body(cat)
+        
 
 class DNA2RNA(nn.Module):
     def __init__(self, 
@@ -232,7 +198,7 @@ class RNA2Protein(nn.Module):
         self.coding_idxs = torch.tensor(coding_idxs, requires_grad=False, dtype=torch.long).to(device)
         self.other_idxs = torch.tensor(other_idxs, requires_grad=False, dtype=torch.long).to(device)
         
-        # head for handling the non-coding genes        
+        # head for handling the coding genes        
         coding_head_layer_dims = exponential_linspace_int(start=len(coding_idxs), end=hidden_dim, num=self.coding_head_length + 1, divisible_by=1)
         self.coding_head = []
         for i in range(self.coding_head_length):
@@ -416,13 +382,13 @@ class Encoder(nn.Module):
                  num_channels: int,
                  tower_length: int,
                  body_length: int,
-                 body_type: str,  # one of ['enformer', 'dilated']
+                 body_type: str,  # one of ['enformer', 'dilated', 'linear']
                  pooling_type: str,  # one of ['max', 'average', 'attention'] 
                  output_2d=False,  # whether to have latent tensors be 2d `(B, out_dim, log_2(in_dim))` or 1d `(B, out_dim)`
                  ):
         super(Encoder, self).__init__()
         
-        assert body_type in ['enformer', 'dilated']
+        assert body_type in ['enformer', 'dilated', 'linear']
         assert pooling_type in ['max', 'average', 'attention'] 
         
         pools = {'max': MaxPool,
@@ -472,6 +438,18 @@ class Encoder(nn.Module):
             self.body = nn.Sequential(*[TransformerBlock(c_out, num_heads=8, dropout=0.1) for _ in range(self.body_length)])
         elif self.body_type == 'dilated':
             self.body = nn.Identity() # TODO ADD DILATED MODEL!!!!
+        elif self.body_type == 'linear':
+            self.body = []
+            layer_dims = exponential_linspace_int(start=self.tower_out_length, end=self.tower_out_length, num=self.body_length + 1, divisible_by=1)
+            for i in range(self.body_length):
+                in_dim = layer_dims[i]
+                out_dim = layer_dims[i + 1]
+                layer = []
+                if i == self.body_length // 2:
+                    layer.extend([nn.BatchNorm1d(in_dim), nn.Dropout(0.05)])
+                layer.extend([nn.Linear(in_dim, out_dim), nn.ReLU()])
+                self.body.append(nn.Sequential(*layer))
+            self.body = nn.Sequential(*self.body)
         else:
             raise NotImplementedError('huh????')
         
@@ -520,13 +498,13 @@ class Decoder(nn.Module):
                  num_channels: int,
                  tower_length: int,
                  body_length: int,
-                 body_type: str,  # one of ['enformer', 'dilated']
+                 body_type: str,  # one of ['enformer', 'dilated', 'linear']
                  unpooling_type: str,  # one of ['interpolation', 'conv'] 
-                 input_2d: bool,  # whether to have latent tensors be 2d `(B, in_dim, log_2(out_dim))` or 1d `(B, in_dim)`
+                 input_2d=False,  # whether to have latent tensors be 2d `(B, in_dim, log_2(out_dim))` or 1d `(B, in_dim)`
                  ):
         super(Decoder, self).__init__()
         
-        assert body_type in ['enformer', 'dilated']
+        assert body_type in ['enformer', 'dilated', 'linear']
         assert unpooling_type in ['interpolation', 'conv'] 
         
         unpools = {'interpolation': UnpoolInterpolate,
@@ -568,6 +546,18 @@ class Decoder(nn.Module):
             self.rev_body = nn.Sequential(*[TransformerBlock(self.num_channels, num_heads=8, dropout=0.2) for _ in range(self.body_length)])
         elif self.body_type == 'dilated':
             self.rev_body = nn.Identity()  # TODO ADD DILATED MODELL!!!!
+        elif self.body_type == 'linear':
+            self.body = []
+            layer_dims = exponential_linspace_int(start=self.tower_in_length, end=self.tower_in_length, num=self.body_length + 1, divisible_by=1)
+            for i in range(self.body_length):
+                in_dim = layer_dims[i]
+                out_dim = layer_dims[i + 1]
+                layer = []
+                if i == self.body_length // 2:
+                    layer.extend([nn.BatchNorm1d(in_dim), nn.Dropout(0.05)])
+                layer.extend([nn.Linear(in_dim, out_dim), nn.ReLU()])
+                self.body.append(nn.Sequential(*layer))
+            self.body = nn.Sequential(*self.body)
         else:
             raise NotImplementedError('huh????')
         

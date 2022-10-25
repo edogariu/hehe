@@ -5,9 +5,13 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import pandas as pd
+import h5py; import hdf5plugin
 
 TOP_DIR_NAME = os.path.dirname(os.path.abspath(__file__))
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+METADATA = pd.read_csv(os.path.join(TOP_DIR_NAME, 'data', 'metadata.csv')) 
+METADATA.set_index('cell_id', inplace=True) # index metadata by cell id
 
 def correlation_score(y_hat, y):
     """
@@ -17,6 +21,8 @@ def correlation_score(y_hat, y):
     
     Returns the average of each sample's Pearson correlation coefficient
     """
+    assert y_hat.shape == y.shape
+    
     if type(y) == pd.DataFrame: y = y.values
     if type(y_hat) == pd.DataFrame: y_hat = y_hat.values
     corrsum = 0
@@ -24,65 +30,44 @@ def correlation_score(y_hat, y):
         corrsum += np.corrcoef(y[i], y_hat[i])[1, 0]
     return corrsum / len(y)
 
-def nonzero_l1_loss(y_hat, y):
-    mask = y != 0
-    return F.l1_loss(y_hat[mask], y[mask])
-
-def negative_correlation_loss(y_hat, y):
+def get_train_idxs(mode: str,
+                   days=[2, 3, 4, 7], 
+                   donors=[13176, 27678, 31800, 32606], 
+                   cell_types=['BP', 'EryP', 'HSC', 'MasP', 'MkP', 'MoP', 'NeuP']):
     """
-    Negative correlation loss function for tensors
-    
-    Returns:
-    -1 = perfect positive correlation
-    1 = totally negative correlation
+    Returns all of the CITE-seq train dataset indices of all data points given the above parameters. 
+
+    Parameters
+    ----------
+    mode: str
+        which mode to use. must be one of `['multi', 'cite']`
+    days : List[int], optional
+        measurement days to use, by default [2, 3, 4, 7]
+    donors : List[int], optional
+        donors to use, by default [13176, 27678, 31800, 32606]
+    cell_types : List[str], optional
+        cell types to use, by default ['BP', 'EryP', 'HSC', 'MasP', 'MkP', 'MoP', 'NeuP']
+
+    Returns
+    -------
+    List[int]
+        indices from train dataset
     """
-    # normalize targets
-    y -= y.mean(dim=-1).unsqueeze(-1)
-    y /= y.std(dim=-1).unsqueeze(-1)
+    assert mode in ['multi', 'cite']
     
-    # compute correlation
-    y_hat_centered = y_hat - y_hat.mean(dim=-1).unsqueeze(dim=-1)
-    r = (y * y_hat_centered).sum(dim=-1)
-    norms = torch.linalg.norm(y_hat_centered, dim=-1)
-    r = (r / norms).mean() / math.sqrt(y.shape[-1])
-    return -r
-
-def focal_loss(y_hat, y):
-    '''
-    Modified focal loss.
-    Runs faster and costs a little bit more memory.
+    inputs_file = os.path.join(TOP_DIR_NAME, 'data', 'train_{}_inputs.h5'.format(mode))
+    assert os.path.isfile(inputs_file)
+    inputs_h5 = h5py.File(inputs_file, 'r')[os.path.split(inputs_file)[1].split('.')[0]]
     
-    Arguments:
-        y_hat (batch x N)
-        y (batch x N)
-    '''
-    y = (y != 0).float()
-    y_hat = torch.sigmoid(y_hat)
+    # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
+    ids = np.array(inputs_h5['axis1']).astype(str)
+    metadata = METADATA.loc[ids]
     
-    pos_inds = y.eq(1).float()
-    neg_inds = y.lt(1).float()
-
-    neg_weights = torch.pow(1 - y, 5)   # change this weight for balance of pos/neg loss
-    # clamp min value is set to 1e-12 to maintain the numerical stability
-    y_hat = torch.clamp(y_hat, 1e-12)
-
-    pos_loss = torch.log(y_hat) * torch.pow(1 - y_hat, 2) * pos_inds
-    neg_loss = torch.log(1 - y_hat) * torch.pow(y_hat, 2) * neg_weights * neg_inds
-
-    num_pos = pos_inds.float().sum()
-    pos_loss = pos_loss.sum()
-    neg_loss = neg_loss.sum()
-
-    if num_pos == 0:
-        loss = -neg_loss
-    else:
-        loss = -(pos_loss + neg_loss) / num_pos
-    return loss
-
-def bce_loss(y_hat, y):
-    y = (y != 0).float()
-    y_hat = torch.sigmoid(y_hat)
-    return F.binary_cross_entropy(y_hat, y)
+    idxs = np.argwhere(np.isin(metadata['day'], days) & 
+                       np.isin(metadata['donor'], donors) & 
+                       np.isin(metadata['cell_type'], cell_types)).ravel()
+    assert len(idxs) > 0
+    return idxs
 
 # -----------------------------------------------------------------------------
 # -------------------------------------  NN UTILS  ----------------------------

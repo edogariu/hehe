@@ -2,18 +2,13 @@ import os
 from typing import Dict, Union
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
-from utils import TOP_DIR_NAME, count_parameters, focal_loss, negative_correlation_loss, nonzero_l1_loss, bce_loss
+from utils import TOP_DIR_NAME, count_parameters
+import losses
 
-LOSS_FN = negative_correlation_loss
-# LOSS_FN = F.l1_loss
-# LOSS_FN = nonzero_l1_loss
-# LOSS_FN = focal_loss
-# LOSS_FN = bce_loss
-
-EVAL_FN = negative_correlation_loss
+DEFAULT_LOSS_FN = losses.negative_correlation_loss
+DEFAULT_ERROR_FN = losses.negative_correlation_loss
 
 """
 This class might look real useless right about now. But I promise its practicing good design and maintainability practices!
@@ -25,18 +20,21 @@ Without changing any method signatures or anything, all one has to do is reimple
 For an example of this, look at `jepa.py`
 """
 
-class Model():
+class ModelWrapper():
     """
     a class to interact with any framework of models
     """
     def __init__(self, 
                  models: Union[nn.Module, Dict[str, nn.Module]],
-                 model_name = None):
+                 model_name = None,
+                 checkpoint_folder = os.path.join(TOP_DIR_NAME, 'checkpoints')):
         self._model_name = model_name if model_name else 'main'  # only used in the __str__() method and as the dict key if training a single nn.Module
         self._models = models if type(models) == dict else {self._model_name: models}
 
-        self._optimizers = None
-        self._lr_schedulers = None
+        self._optimizers = {}
+        self._lr_schedulers = {}
+        
+        self._checkpoint_folder = checkpoint_folder
         
     def train(self):
         """
@@ -86,10 +84,10 @@ class Model():
         weight_decay : Union[float, Dict[str, float]]
             l2 regularization for each model
         """
-        if type(initial_lr) == float: initial_lr = {self._model_name: initial_lr}
-        if type(lr_decay_period) == int: lr_decay_period = {self._model_name: lr_decay_period}
-        if type(lr_decay_gamma) == float: lr_decay_gamma = {self._model_name: lr_decay_gamma}
-        if type(weight_decay) == float: weight_decay = {self._model_name: weight_decay}
+        if type(initial_lr) == float: initial_lr = {k: initial_lr for k in self._models.keys()}
+        if type(lr_decay_period) == int: lr_decay_period = {k: lr_decay_period for k in self._models.keys()}
+        if type(lr_decay_gamma) == float: lr_decay_gamma = {k: lr_decay_gamma for k in self._models.keys()}
+        if type(weight_decay) == float: weight_decay = {k: weight_decay for k in self._models.keys()}
         
         self._optimizers = {}
         self._lr_schedulers = {}
@@ -119,22 +117,19 @@ class Model():
             lr_scheduler.step()
         
     def infer(self, 
-              x: torch.tensor, 
-              day: torch.tensor):
+              x: torch.tensor):
         """
         Convert input sequence to output sequence
 
         Parameters
         ----------
         x : torch.tensor
-            input sequence of shape `(batch_size, in_seq_len)`
-        day : torch.tensor
-            day that input measurements were made, of shape `(batch_size,)`
+            input sequence of shape `(batch_size, in_dim)`
 
         Returns
         -------
         torch.tensor
-            output sequence of shape `(batch_size, out_seq_len)`
+            output sequence of shape `(batch_size, out_dim)`
         """
         with torch.no_grad():
             pred = self._models[self._model_name](x)  # default assumes only one model in ensemble
@@ -142,7 +137,6 @@ class Model():
     
     def loss(self, 
              x: torch.tensor, 
-             day: torch.tensor,
              y: torch.tensor):
         """
         Loss for a batch of training examples. 
@@ -151,11 +145,9 @@ class Model():
         Parameters
         ----------
         x : torch.tensor
-            input sequence of shape `(batch_size, in_seq_len)`
-        day : torch.tensor
-            day that input measurements were made, of shape `(batch_size,)`
+            input sequence of shape `(batch_size, in_dim)`
         y : torch.tensor
-            target output sequence of shape `(batch_size, out_seq_len)`
+            target output sequence of shape `(batch_size, out_dim)`
             
         Returns
         ------------
@@ -163,12 +155,11 @@ class Model():
             loss
         """
         pred = self._models[self._model_name](x)  # default assumes only one model in ensemble
-        loss  = LOSS_FN(pred, y)
+        loss  = DEFAULT_LOSS_FN(pred, y)
         return loss
     
     def eval_err(self, 
                  x: torch.tensor, 
-                 day: torch.tensor,
                  y: torch.tensor):
         """
         Error for a batch of training examples. 
@@ -177,11 +168,9 @@ class Model():
         Parameters
         ----------
         x : torch.tensor
-            input sequence of shape `(batch_size, in_seq_len)`
-        day : torch.tensor
-            day that input measurements were made, of shape `(batch_size,)`
+            input sequence of shape `(batch_size, in_dim)`
         y : torch.tensor
-            target output sequence of shape `(batch_size, out_seq_len)`
+            target output sequence of shape `(batch_size, out_dim)`
             
         Returns
         ------------
@@ -192,8 +181,8 @@ class Model():
         """
         with torch.no_grad():
             pred = self._models[self._model_name](x) # default assumes only one model in ensemble
-            error = LOSS_FN(pred, y).item()
-            loss = EVAL_FN(pred, y).item()
+            error = DEFAULT_ERROR_FN(pred, y).item()
+            loss = DEFAULT_LOSS_FN(pred, y).item()
         return error, loss
     
     def __str__(self) -> str:
@@ -205,20 +194,25 @@ class Model():
     
     def load_checkpoint(self):
         for k in self._models:
-            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
-            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
+            model_filename = os.path.join(self._checkpoint_folder, 'models', '{}.pth'.format(k))
+            opt_filename = os.path.join(self._checkpoint_folder, 'optimizers', '{}.pth'.format(k))
             
-            assert os.path.isfile(model_filename) and os.path.isfile(opt_filename)
+            assert os.path.isfile(model_filename)
 
             self._models[k].load_state_dict(torch.load(model_filename), strict=True)
-            if self._optimizers:
+            if os.path.isfile(opt_filename):
+                if len(self._optimizers) == 0:
+                    self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=0, weight_decay=0)
                 self._optimizers[k].load_state_dict(torch.load(opt_filename))
+        return self
     
     def save_checkpoint(self):
         for k in self._models:
-            model_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'models', '{}.pth'.format(k))
-            opt_filename = os.path.join(TOP_DIR_NAME, 'checkpoints', 'optimizers', '{}.pth'.format(k))
+            model_filename = os.path.join(self._checkpoint_folder, 'models', '{}.pth'.format(k))
+            opt_filename = os.path.join(self._checkpoint_folder, 'optimizers', '{}.pth'.format(k))
 
             torch.save(self._models[k].state_dict(), model_filename)
-            if self._optimizers:
+            if len(self._optimizers) > 0:
                 torch.save(self._optimizers[k].state_dict(), opt_filename)
+        return self
+    

@@ -5,10 +5,11 @@ import torch.utils.data as D
 import os
 import pickle
 import numpy as np
+import tqdm
 
-from utils import exponential_linspace_int, count_parameters, TOP_DIR_NAME
+from utils import device, exponential_linspace_int, count_parameters, TOP_DIR_NAME
 from datasets import SparseDataset, H5Dataset
-from model import Model
+from model import ModelWrapper
 from trainer import Trainer
 
 """
@@ -109,7 +110,7 @@ class SillyH5Dataset(H5Dataset):
         self.rna_idxs = self.chrom_rna_map[chrom]
         return D.DataLoader(self, batch_size, shuffle=shuffle, drop_last=True, pin_memory=pin_memory, num_workers=num_workers)
 
-class SillyModel(Model):
+class SillyModel(ModelWrapper):
     def __init__(self, models: Union[nn.Module, Dict[str, nn.Module]], model_name=None):
         super().__init__(models, model_name)
     
@@ -132,6 +133,55 @@ class SillyModel(Model):
             torch.save(self._models[k].state_dict(), model_filename)
             if self._optimizers:
                 torch.save(self._optimizers[k].state_dict(), opt_filename)
+                
+class SillyInferencer():
+    def __init__(self):
+        self.models = {}
+        self.dna_idxs = pickle.load(open('pkls/chrom_dna_map.pkl', 'rb'))
+        self.rna_idxs = pickle.load(open('pkls/chrom_rna_map.pkl', 'rb'))
+        for chrom in DNA_CHROMOSOME_LENS.keys():
+            model = SillyDNA2RNA(chrom, 5, 0.5, True)
+            model.load_state_dict(torch.load('checkpoints/chromosome/models/{}_sigmoid.pth'.format(chrom), map_location=device))
+            model.eval()
+            self.models[chrom] = model
+    
+    def eval(self):
+        for m in self.models.values():
+            m.eval()
+        return self
+    
+    def to(self, device: torch.device):
+        for m in self.models.values():
+            m.to(device)
+        return self
+    
+    def infer(self, x):
+        out = torch.zeros((x.shape[0], 23418))
+        for chrom in DNA_CHROMOSOME_LENS.keys():
+            out[:, self.rna_idxs[chrom]] = torch.sigmoid(self.models[chrom](x[:, self.dna_idxs[chrom]]))
+        return out
+    
+    def infer_on_whole_dataset(self, dataset, batch_size):
+        ret = np.zeros((len(dataset), 23418))
+        for chrom in self.models.keys():
+            print(chrom)
+            dl = dataset.get_dataloader(batch_size, idxs_to_use=self.dna_idxs[chrom])
+            m = self.models[chrom]
+            m.eval().to(device)
+            rna_idxs = self.rna_idxs[chrom]
+            model_outs = torch.zeros((len(dataset), len(rna_idxs)))
+            with torch.no_grad():
+                i = 0
+                for x in tqdm.tqdm(dl):
+                    b = x.shape[0]
+                    x = x.to(device)
+                    out = m(x)
+                    model_outs[i:i + b] = out.cpu()
+                    i += b
+            ret[:, rna_idxs] = model_outs.detach().numpy()
+        return ret
+                
+        
 
 def run():
     # ------------------------------------- hyperparameters -------------------------------------------------

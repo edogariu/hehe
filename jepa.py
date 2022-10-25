@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model import Model
+from model import ModelWrapper
 
-class JEPA(Model):
+class JEPA(ModelWrapper):
     """
     a class to handle joint embeddings, possibly with predictor between them
     

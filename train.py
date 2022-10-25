@@ -3,7 +3,7 @@ import torch
 import architectures
 from datasets import H5Dataset, SparseDataset, NaiveDataset
 from trainer import Trainer
-from model import Model
+from model import ModelWrapper
 from utils import count_parameters
 
 def train():
@@ -38,7 +38,7 @@ def train():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     # model.load_state_dict(torch.load('checkpoints/models/{}.pth'.format(model_name)))
-    model = Model(model, model_name)
+    model = ModelWrapper(model, model_name)
     # model.load_checkpoint()
     trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
     trainer.train(num_epochs, eval_every, patience, num_tries)
