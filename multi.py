@@ -14,8 +14,6 @@ from utils import correlation_score, device, exponential_linspace_int, count_par
 from model import ModelWrapper
 from trainer import Trainer
 
-CHECKPOINT_FOLDER = os.path.join(TOP_DIR_NAME, 'checkpoints', 'multi_ensemble')
-
 SPLIT_INTERVALS = {'train': (0, 0.85),  # intervals for each split
                    'val': (0.85, 1.0),
                    'test': (0.85, 1.0),
@@ -67,7 +65,7 @@ class MultiDataset():
         return D.DataLoader(self.d, batch_size, shuffle=shuffle, drop_last=drop_last, pin_memory=pin_memory, num_workers=num_workers)
 
 class MultiModel(ModelWrapper):
-    def __init__(self, model_name, num_var_features_to_use, num_pca_features_to_use, hidden_dim, num_target_features_to_use, depth, dropout=0.1):
+    def __init__(self, model_name, num_var_features_to_use, num_pca_features_to_use, hidden_dim, num_target_features_to_use, depth, dropout=0.25):
         self.in_dim = num_var_features_to_use + num_pca_features_to_use
         self.out_dim = num_target_features_to_use
         
@@ -78,9 +76,10 @@ class MultiModel(ModelWrapper):
         
         self.in_pca = pickle.load(open('pkls/multi_4000_pca.pkl', 'rb'))
         self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
-        self.var_idxs = np.load('pkls/multi_var_idxs.npy')[:self.num_var_features_to_use]
+        self.multi_var_idxs = np.load('pkls/multi_var_idxs.npy')[:self.num_var_features_to_use]
+        self.cite_var_idxs = np.load('pkls/cite_var_idxs.npy')[:-3418]
         
-        self.out_mul = torch.tensor(self.out_pca.components_).to(device)
+        self.out_mul = torch.tensor(self.out_pca.components_).float().to(device)
         self.out_mul.requires_grad = False
         
         pyramid_layer_dims = exponential_linspace_int(start=self.in_dim, end=hidden_dim, num=depth + 1, divisible_by=1)
@@ -101,18 +100,7 @@ class MultiModel(ModelWrapper):
                              nn.Linear(mid_dim, self.out_dim))
         
         self.model = architectures.FPN(pyramid_layers, body)
-        super(MultiModel, self).__init__(self.model, model_name, checkpoint_folder=CHECKPOINT_FOLDER)
-    
-    def infer(self, 
-              x: torch.tensor):
-        with torch.no_grad():
-            if x.__class__ == torch.Tensor:
-                x = x.cpu().detach().numpy()
-            coding = x[:, self.coding_idxs]
-            other = self.pca.transform(x[:, self.other_idxs])
-            inputs = np.concatenate((coding, other), axis=1)
-            pred = self.model(torch.tensor(inputs).to(device))
-            return pred
+        super(MultiModel, self).__init__(self.model, model_name)
     
     def loss(self, 
              x: torch.tensor, 
@@ -120,7 +108,7 @@ class MultiModel(ModelWrapper):
         x = torch.cat((x[:, :self.num_var_features_to_use], x[:, 4000:4000 + self.num_pca_features_to_use]), dim=1)
         out = self.model(x)
         pred = torch.mm(out, self.out_mul[:self.out_dim])
-        loss = losses.negative_correlation_loss(pred, y)
+        loss = losses.negative_correlation_loss(pred, y[:, self.cite_var_idxs])
         return loss
     
     def eval_err(self, 
@@ -130,23 +118,24 @@ class MultiModel(ModelWrapper):
             x = torch.cat((x[:, :self.num_var_features_to_use], x[:, 4000:4000 + self.num_pca_features_to_use]), dim=1)
             out = self.model(x)
             pred = torch.mm(out, self.out_mul[:self.out_dim])
-            error = -correlation_score(out.cpu().numpy(), self.out_pca.transform(y.cpu().numpy())[:, :self.out_dim])  # compare in pca world
-            loss = -correlation_score(pred.cpu().numpy(), y.cpu().numpy())  # compare in real world
+            y = y[:, self.cite_var_idxs].cpu().numpy()
+            error = -correlation_score(out.cpu().numpy(), self.out_pca.transform(y)[:, :self.out_dim])  # compare in pca world
+            loss = -correlation_score(pred.cpu().numpy(), y)  # compare in real world
         return error, loss    
 
 if __name__ == '__main__':
     # ------------------------------------- hyperparameters -------------------------------------------------
 
-    model_name = 'multi_var_pca'
-    batch_size = 512
+    model_name = 'multi_pca_out'
+    batch_size = 256
 
-    initial_lr = 0.016
-    lr_decay_period = 8
+    initial_lr = 0.03
+    lr_decay_period = 15
     lr_decay_gamma = 0.7
-    weight_decay = 0.0004
+    weight_decay = 0.001
 
-    num_epochs = 30
-    eval_every = 3
+    num_epochs = 100
+    eval_every = 4
     patience = 3
     num_tries = 4
 
@@ -161,8 +150,9 @@ if __name__ == '__main__':
     
     print('training')
     model = MultiModel(model_name, 
-                       num_var_features_to_use=1000, num_pca_features_to_use=1000, num_target_features_to_use=2000, 
+                       num_var_features_to_use=2500, num_pca_features_to_use=1500, num_target_features_to_use=4000, 
                        hidden_dim=512, depth=6)
+    # print(model); exit(0)
     trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
     trainer.train(num_epochs, eval_every, patience, num_tries)
     
