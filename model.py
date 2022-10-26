@@ -89,8 +89,6 @@ class ModelWrapper():
         if type(lr_decay_gamma) == float: lr_decay_gamma = {k: lr_decay_gamma for k in self._models.keys()}
         if type(weight_decay) == float: weight_decay = {k: weight_decay for k in self._models.keys()}
         
-        self._optimizers = {}
-        self._lr_schedulers = {}
         for k in self._models.keys():
             self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
             self._lr_schedulers[k] = optim.lr_scheduler.StepLR(self._optimizers[k], step_size=lr_decay_period[k], gamma=lr_decay_gamma[k], verbose=True)
@@ -201,7 +199,7 @@ class ModelWrapper():
 
             self._models[k].load_state_dict(torch.load(model_filename), strict=True)
             if os.path.isfile(opt_filename):
-                if len(self._optimizers) == 0:
+                if k not in self._optimizers:
                     self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=0, weight_decay=0)
                 self._optimizers[k].load_state_dict(torch.load(opt_filename))
         return self
@@ -212,7 +210,7 @@ class ModelWrapper():
             opt_filename = os.path.join(self._checkpoint_folder, 'optimizers', '{}.pth'.format(k))
 
             torch.save(self._models[k].state_dict(), model_filename)
-            if len(self._optimizers) > 0:
+            if k in self._optimizers:
                 torch.save(self._optimizers[k].state_dict(), opt_filename)
         return self
     

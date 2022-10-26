@@ -74,13 +74,13 @@ class MultiModel(ModelWrapper):
         
         assert self.num_var_features_to_use + self.num_pca_features_to_use == self.in_dim
         
-        self.in_pca = pickle.load(open('pkls/multi_4000_pca.pkl', 'rb'))
         self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
-        self.multi_var_idxs = np.load('pkls/multi_var_idxs.npy')[:self.num_var_features_to_use]
         self.cite_var_idxs = np.load('pkls/cite_var_idxs.npy')[:-3418]
         
-        self.out_mul = torch.tensor(self.out_pca.components_).float().to(device)
+        self.out_mul = torch.tensor(self.out_pca.components_[:self.out_dim]).float().to(device)
+        self.pca_mean = torch.tensor(self.out_pca.mean_).to(device)
         self.out_mul.requires_grad = False
+        self.pca_mean.requires_grad = False
         
         pyramid_layer_dims = exponential_linspace_int(start=self.in_dim, end=hidden_dim, num=depth + 1, divisible_by=1)
         # pyramid_layer_dims = [self.in_dim // (3 ** i) for i in range(depth + 1)]
@@ -106,9 +106,11 @@ class MultiModel(ModelWrapper):
              x: torch.tensor, 
              y: torch.tensor):
         x = torch.cat((x[:, :self.num_var_features_to_use], x[:, 4000:4000 + self.num_pca_features_to_use]), dim=1)
+        y = y[:, self.cite_var_idxs]
+        
         out = self.model(x)
-        pred = torch.mm(out, self.out_mul[:self.out_dim])
-        loss = losses.negative_correlation_loss(pred, y[:, self.cite_var_idxs])
+        pred = torch.mm(out, self.out_mul) + self.pca_mean
+        loss = losses.negative_correlation_loss(pred, y)
         return loss
     
     def eval_err(self, 
@@ -116,9 +118,10 @@ class MultiModel(ModelWrapper):
                  y: torch.tensor):
         with torch.no_grad():
             x = torch.cat((x[:, :self.num_var_features_to_use], x[:, 4000:4000 + self.num_pca_features_to_use]), dim=1)
-            out = self.model(x)
-            pred = torch.mm(out, self.out_mul[:self.out_dim])
             y = y[:, self.cite_var_idxs].cpu().numpy()
+
+            out = self.model(x)
+            pred = torch.mm(out, self.out_mul) + self.pca_mean
             error = -correlation_score(out.cpu().numpy(), self.out_pca.transform(y)[:, :self.out_dim])  # compare in pca world
             loss = -correlation_score(pred.cpu().numpy(), y)  # compare in real world
         return error, loss    
@@ -129,10 +132,10 @@ if __name__ == '__main__':
     model_name = 'multi_pca_out'
     batch_size = 256
 
-    initial_lr = 0.03
+    initial_lr = 0.016
     lr_decay_period = 15
     lr_decay_gamma = 0.7
-    weight_decay = 0.001
+    weight_decay = 0.0002
 
     num_epochs = 100
     eval_every = 4
@@ -150,8 +153,8 @@ if __name__ == '__main__':
     
     print('training')
     model = MultiModel(model_name, 
-                       num_var_features_to_use=2500, num_pca_features_to_use=1500, num_target_features_to_use=4000, 
-                       hidden_dim=512, depth=6)
+                       num_var_features_to_use=1000, num_pca_features_to_use=1000, num_target_features_to_use=1600, 
+                       hidden_dim=512, depth=8)
     # print(model); exit(0)
     trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
     trainer.train(num_epochs, eval_every, patience, num_tries)

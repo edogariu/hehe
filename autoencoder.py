@@ -27,15 +27,14 @@ class AutoEncoderDataset():
             which indices to use in the dataset
         """
         self.idxs_to_use = idxs_to_use
+        self.var_idxs = np.load('pkls/cite_var_idxs.npy')[:-3418]
         
         self.length = len(self.idxs_to_use)
         assert self.length != 0
                 
-        # self.inputs = np.load('data/train_multi_targets_pca.npy')[idxs]        
-        self.targets = ss.load_npz('data_sparse/train_multi_targets_sparse.npz')
+        self.inputs = np.load('data/train_multi_targets_pca.npy')     
+        self.targets = ss.load_npz('data_sparse/train_multi_targets_sparse.npz')[:, self.var_idxs]
         
-        self.inputs = np.zeros(self.targets.shape[0])
-    
     def __len__(self):
         return self.length
     
@@ -54,6 +53,7 @@ class AutoEncoderDataset():
 
         x_tensor = torch.tensor(self.inputs[idxs])
         y_tensor = torch.tensor(self.targets[idxs].toarray())
+        # y_tensor = torch.zeros_like(x_tensor)
                 
         d = D.TensorDataset(x_tensor, y_tensor)
 
@@ -88,50 +88,62 @@ class Model(nn.Module):
     
 
 class AutoEncoder(ModelWrapper):
-    def __init__(self, in_dim, out_dim, num_channels, tower_length, body_length, body_type, pooling_type):
-        # self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
+    # def __init__(self, in_dim, out_dim, num_channels, tower_length, body_length, body_type, pooling_type):
+    #     self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
         
-        self.encoder = architectures.Encoder(in_dim, out_dim, num_channels, tower_length, body_length, body_type, pooling_type)
-        self.decoder = architectures.Decoder(out_dim, in_dim, num_channels, tower_length, body_length, body_type, 'conv')
-        
-        super().__init__({'encoder': self.encoder, 'decoder': self.decoder}, 'autoencoder')
-    
-    # def __init__(self, in_dim, hidden_dim, out_dim, body_length):
-    #     # self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
-    #     # self.in_mul = torch.tensor(self.out_pca.components_.T).to(device)
-    #     # self.out_mul = torch.tensor(self.out_pca.components_).to(device)
-            
-    #     self.encoder = Model(in_dim, hidden_dim, out_dim, body_length).model
-    #     self.decoder = Model(out_dim, hidden_dim, in_dim, body_length).model
+    #     self.encoder = architectures.Encoder(in_dim, out_dim, num_channels, tower_length, body_length, body_type, pooling_type)
+    #     self.decoder = architectures.Decoder(out_dim, in_dim, num_channels, tower_length, body_length, body_type, 'conv')
         
     #     super().__init__({'encoder': self.encoder, 'decoder': self.decoder}, 'autoencoder')
     
+    def __init__(self, in_dim, hidden_dim, out_dim, body_length):
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        
+        self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
+        self.var_idxs = np.load('pkls/cite_var_idxs.npy')[:-3418]
+        
+        self.in_mul = torch.tensor(self.out_pca.components_.T[:self.in_dim]).to(device)
+        self.out_mul = torch.tensor(self.out_pca.components_[:self.in_dim]).to(device)
+        self.pca_mean = torch.tensor(self.out_pca.mean_).to(device)
+        self.in_mul.requires_grad = False
+        self.out_mul.requires_grad = False
+        self.pca_mean.requires_grad = False
+            
+        self.encoder = Model(in_dim, hidden_dim, out_dim, body_length).model
+        self.decoder = Model(out_dim, hidden_dim, in_dim, body_length).model
+        
+        super().__init__({'encoder': self.encoder, 'decoder': self.decoder}, 'autoencoder')
+    
     def loss(self, x: torch.tensor, y: torch.tensor):
-        # y = (y != 0).float()
-        enc = self.encoder(y)
+        x = x[:, :self.in_dim]
+        enc = self.encoder(x)
         pred = self.decoder(enc)
-        # pred = torch.mm(pred, self.out_mul)
+        # loss = F.l1_loss(pred, x)
+        pred = torch.mm(pred, self.out_mul) + self.pca_mean
         loss = losses.negative_correlation_loss(pred, y)
         return loss
     
     def eval_err(self, x: torch.tensor, y: torch.tensor):
         with torch.no_grad():
-            # y = (y != 0).float()
-            enc = self.encoder(y)
+            x = x[:, :self.in_dim]
+            enc = self.encoder(x)
             pred = self.decoder(enc)
-            # pred = torch.mm(pred, self.out_mul)
+            # loss = F.l1_loss(pred, x).item()
+            pred = torch.mm(pred, self.out_mul) + self.pca_mean
             loss = losses.negative_correlation_loss(pred, y).item()
             return loss, loss
         
     def infer(self, x: torch.tensor):
         with torch.no_grad():
-            enc = self.encoder(x)
-        return enc
+            enc = self.encoder(x[:, :self.in_dim])
+            dec = self.decoder(enc)
+        return dec
     
 if __name__ == '__main__':
     # ------------------------------------- hyperparameters -------------------------------------------------
 
-    batch_size = 64
+    batch_size = 256
 
     initial_lr = 0.02
     lr_decay_period = 15
@@ -153,8 +165,8 @@ if __name__ == '__main__':
     
     print('training')
     # model = AutoEncoder(23418, 2000, 256, 4, 7, 'linear', 'max')
-    model = AutoEncoder(23418, 256, 1600, 4)
-    print(model); exit(0)
+    model = AutoEncoder(1600, 256, 1600, 4)
+    # print(model); exit(0)
     trainer = Trainer(model, train_dataloader, val_dataloader, initial_lr, lr_decay_period, lr_decay_gamma, weight_decay)
     trainer.train(num_epochs, eval_every, patience, num_tries)
     
