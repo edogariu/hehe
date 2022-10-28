@@ -12,7 +12,7 @@ import librosa
 
 import architectures
 import losses
-from utils import correlation_score, device, exponential_linspace_int, count_parameters, get_train_idxs, TOP_DIR_NAME, METADATA
+from utils import correlation_score, device, exponential_linspace_int, count_parameters, get_train_idxs
 from model import ModelWrapper
 from trainer import Trainer
 
@@ -25,6 +25,7 @@ class MegaDataset(D.Dataset):
     _pca = None
     _inputs = None
     _targets = None
+    _true_targets = None
     
     def __init__(self, split: str, mode: str, idxs_to_use: List[int]):
         """
@@ -39,17 +40,19 @@ class MegaDataset(D.Dataset):
         """
         
         assert split in ['train', 'val', 'test', 'all']
-        
         assert mode in ['multi', 'cite']
+        self.split = split
         self.mode = mode
         
-        if not MegaDataset._pca is not None: 
+        if MegaDataset._pca is None: 
             MegaDataset._pca = np.load(f'data/train_{mode}_inputs_pca.npy')[idxs_to_use] if mode == 'multi' else np.concatenate((np.load(f'data/train_{mode}_inputs_coding.npy'), np.load(f'data/train_{mode}_inputs_pca.npy')), axis=-1)[idxs_to_use]
-        if not MegaDataset._inputs is not None: 
-            MegaDataset._inputs = pd.read_hdf('data/train_cite_inputs.h5').values[idxs_to_use] # self.inputs = ss.load_npz(f'data_sparse/train_{mode}_inputs_sparse.npz')[idxs_to_use]
-        if not MegaDataset._targets is not None: 
+        if MegaDataset._inputs is None: 
+            MegaDataset._inputs = ss.load_npz(f'data_sparse/train_{mode}_inputs_sparse.npz')[idxs_to_use]
+        if MegaDataset._targets is None: 
             MegaDataset._targets = np.load(f'data/train_{mode}_targets_pca.npy')[idxs_to_use] if mode == 'multi' else pd.read_hdf(f'data/train_{mode}_targets.h5').values[idxs_to_use]
-        # self.targets = ss.load_npz(f'data_sparse/train_{mode}_targets_sparse.npz')[idxs_to_use]
+        if MegaDataset._true_targets is None and mode == 'multi':
+            var_idxs = np.load('pkls/cite_var_idxs.npy')[:20000]
+            MegaDataset._true_targets = ss.load_npz(f'data_sparse/train_{mode}_targets_sparse.npz')[idxs_to_use][:, var_idxs]
         
         # create correct split       
         np.random.seed(0)  # to ensure same train, val, test splits every time
@@ -71,10 +74,14 @@ class MegaDataset(D.Dataset):
     def __getitem__(self, index: int):
         index = self.idxs[index]
         pca = MegaDataset._pca[index]
-        in_seq = MegaDataset._inputs[index] # in_seq = self.inputs[index].toarray()[0]  # could add more to inputs here
+        in_seq = MegaDataset._inputs[index].toarray()[0]
         mel = librosa.feature.melspectrogram(y=in_seq, sr=len(in_seq), hop_length=1800 if self.mode == 'multi' else 173)  # hop lengths to ensure (128 x 128) spectrograms
         if self.mode == 'cite': mel = librosa.power_to_db(mel)
-        targets = MegaDataset._targets[index]
+        
+        if self.split == 'train' or MegaDataset._true_targets is None:
+            targets = MegaDataset._targets[index]
+        else:
+            targets = MegaDataset._true_targets[index].toarray()[0]
         
         return (pca, mel, targets)
                 
@@ -185,6 +192,8 @@ class MegaModel(ModelWrapper):
                  mel_args):
         self.out_dim = out_dim
         
+        self.out_pca = pickle.load(open('pkls/multi_targets_pca.pkl', 'rb'))
+        self.pca_in_dim = pca_args['in_dim']
         self.pca_head = PCAHead(**pca_args)
         self.mel_head = MelHead(**mel_args)
         
@@ -213,12 +222,12 @@ class MegaModel(ModelWrapper):
              pca: torch.tensor, 
              mel: torch.tensor,
              y: torch.tensor):
-        h1 = self.pca_head(pca)
+        h1 = self.pca_head(pca[:, :self.pca_in_dim])
         h2 = self.mel_head(mel)
         cat = torch.cat((h1, h2), dim=1)
         pred = self.fpn(cat)
-        loss = losses.negative_correlation_loss(pred, y)
-        # loss = F.mse_loss(pred, y[:, :self.out_dim])
+        # loss = losses.negative_correlation_loss(pred, y)
+        loss = F.mse_loss(pred, y[:, :self.out_dim])
         return loss
     
     def eval_err(self, 
@@ -226,11 +235,12 @@ class MegaModel(ModelWrapper):
                 mel: torch.tensor,
                 y: torch.tensor):
         with torch.no_grad():
-            h1 = self.pca_head(pca)
+            h1 = self.pca_head(pca[:, :self.pca_in_dim])
             h2 = self.mel_head(mel)
             cat = torch.cat((h1, h2), dim=1)
-            pred = self.fpn(cat)
-            loss = -correlation_score(pred.cpu().numpy(), y.cpu().numpy())
+            pred = self.fpn(cat).cpu().numpy()
+            yhat = np.dot(pred, self.out_pca.components_[:self.out_dim]) + self.out_pca.mean_
+            loss = -correlation_score(yhat, y.cpu().numpy())
             # loss = F.mse_loss(pred, y[:, :self.out_dim]).item()
             error = loss
         return error, loss  
@@ -238,7 +248,7 @@ class MegaModel(ModelWrapper):
 if __name__ == '__main__':
     # ------------------------------------- hyperparameters -------------------------------------------------
 
-    mode = 'cite'; assert mode in ['multi', 'cite']
+    mode = 'multi'; assert mode in ['multi', 'cite']
     model_name = f'mega_{mode}'
     batch_size = 128
 
@@ -254,15 +264,15 @@ if __name__ == '__main__':
     # multi
     if mode == 'multi':
         fpn_args = {'hidden_dim': 512,
-                    'out_dim': 4000,
+                    'out_dim': 2000,
                     'body_depth': 3,
                     'dropout': 0.15}
-        pca_args = {'in_dim': 4000, 
+        pca_args = {'in_dim': 2000, 
                     'hidden_dim': 512, 
-                    'out_dim': 4000, 
+                    'out_dim': 2000, 
                     'depth': 4}
         mel_args = {'mel_shape': (128, 128),
-                    'out_dim': 4000,
+                    'out_dim': 2000,
                     'n_chan': 128,
                     'tower_depth': 8,
                     'body_type': 'linear',
@@ -284,7 +294,7 @@ if __name__ == '__main__':
         mel_args = {'mel_shape': (128, 128),
                     'out_dim': 512,
                     'n_chan': 256,
-                    'tower_depth': 10,
+                    'tower_depth': 9,
                     'body_type': 'linear',
                     'body_depth': 4,
                     'pooling_type': 'max',
@@ -295,6 +305,9 @@ if __name__ == '__main__':
 
     # --------------------------------------------------------------------------------------------------------
 
+    model = MegaModel(model_name, **fpn_args, pca_args=pca_args, mel_args=mel_args)
+    # print(model); exit(0)
+
     print('preparing datasets')
     idxs = get_train_idxs(mode)
     train_dataset = MegaDataset('train', mode, idxs)
@@ -303,9 +316,6 @@ if __name__ == '__main__':
     val_dataloader = val_dataset.get_dataloader(batch_size)
     
     print('training')
-    model = MegaModel(model_name, **fpn_args, pca_args=pca_args, mel_args=mel_args)
-    # model = Baby(model_name, **model_args)
-    # print(model); exit(0)
     trainer = Trainer(model, train_dataloader, val_dataloader, **trainer_args)
     trainer.train(**train_args)
     
