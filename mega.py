@@ -284,6 +284,7 @@ if __name__ == '__main__':
                     'pool_every': 2,
                     'pool_size': 2,
                     'dropout': 0.1}
+
     # cite
     else:
         fpn_args = {'hidden_dim': 512,
@@ -312,12 +313,12 @@ if __name__ == '__main__':
     # print(model); exit(0)
 
     print('preparing datasets')
-    idxs = get_train_idxs(mode)
+    idxs = get_train_idxs(mode, days=[2,])
     train_dataset = MegaDataset('train', mode, idxs)
     val_dataset = MegaDataset('val', mode, idxs)
     train_dataloader = train_dataset.get_dataloader(batch_size)
     val_dataloader = val_dataset.get_dataloader(batch_size)
-    
+
     print('training')
     trainer = Trainer(model, train_dataloader, val_dataloader, **trainer_args)
     trainer.train(**train_args)

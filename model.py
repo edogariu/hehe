@@ -9,6 +9,7 @@ import losses
 
 DEFAULT_LOSS_FN = losses.negative_correlation_loss
 DEFAULT_ERROR_FN = losses.negative_correlation_loss
+OPTIMIZER = optim.SGD
 
 """
 This class might look real useless right about now. But I promise its practicing good design and maintainability practices!
@@ -90,7 +91,7 @@ class ModelWrapper():
         if type(weight_decay) == float: weight_decay = {k: weight_decay for k in self._models.keys()}
         
         for k in self._models.keys():
-            self._optimizers[k] = optim.SGD(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
+            self._optimizers[k] = OPTIMIZER(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
             self._lr_schedulers[k] = optim.lr_scheduler.StepLR(self._optimizers[k], step_size=lr_decay_period[k], gamma=lr_decay_gamma[k], verbose=True)
     
     def step_optimizers(self):
@@ -200,7 +201,7 @@ class ModelWrapper():
             self._models[k].load_state_dict(torch.load(model_filename), strict=True)
             if os.path.isfile(opt_filename):
                 if k not in self._optimizers:
-                    self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=0, weight_decay=0)
+                    self._optimizers[k] = OPTIMIZER(self._models[k].parameters(), lr=0, weight_decay=0)
                 self._optimizers[k].load_state_dict(torch.load(opt_filename))
         return self
     
