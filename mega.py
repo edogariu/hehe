@@ -36,12 +36,12 @@ class MegaDataset(D.Dataset):
         
         assert mode in ['multi', 'cite']
         
-        self.pca = np.load(f'data/train_{mode}_inputs_pca.npy')
+        self.pca = np.load(f'data/train_{mode}_inputs_pca.npy') if mode == 'multi' else np.concatenate((np.load(f'data/train_{mode}_inputs_coding.npy'), np.load(f'data/train_{mode}_inputs_pca.npy')), axis=-1)
         self.inputs = ss.load_npz(f'data_sparse/train_{mode}_inputs_sparse.npz')[idxs_to_use]
         self.targets = np.load(f'data/train_{mode}_targets_pca.npy')[idxs_to_use] if mode == 'multi' else pd.read_hdf(f'data/train_{mode}_targets.h5').values
         # self.targets = ss.load_npz(f'data_sparse/train_{mode}_targets_sparse.npz')[idxs_to_use]
         
-        assert self.inputs.shape[0] == self.targets.shape[0]
+        assert self.inputs.shape[0] == self.targets.shape[0] and self.inputs.shape[0] == self.pca.shape[0]
         self.length = self.inputs.shape[0]
         
         self.idxs = np.arange(self.length)
@@ -213,8 +213,8 @@ class MegaModel(ModelWrapper):
         h2 = self.mel_head(mel)
         cat = torch.cat((h1, h2), dim=1)
         pred = self.fpn(cat)
-        loss = losses.negative_correlation_loss(pred, y)
-        # loss = F.mse_loss(pred, y[:, :self.out_dim])
+        # loss = losses.negative_correlation_loss(pred, y)
+        loss = F.mse_loss(pred, y[:, :self.out_dim])
         return loss
     
     def eval_err(self, 
@@ -226,15 +226,15 @@ class MegaModel(ModelWrapper):
             h2 = self.mel_head(mel)
             cat = torch.cat((h1, h2), dim=1)
             pred = self.fpn(cat)
-            loss = -correlation_score(pred.cpu().numpy(), y.cpu().numpy())
-            # loss = F.mse_loss(pred, y[:, :self.out_dim]).item()
+            # loss = -correlation_score(pred.cpu().numpy(), y.cpu().numpy())
+            loss = F.mse_loss(pred, y[:, :self.out_dim]).item()
             error = loss
         return error, loss  
 
 if __name__ == '__main__':
     # ------------------------------------- hyperparameters -------------------------------------------------
 
-    mode = 'cite'
+    mode = 'multi'; assert mode in ['multi', 'cite']
     model_name = f'mega_{mode}'
     batch_size = 128
 
@@ -247,32 +247,60 @@ if __name__ == '__main__':
                   'patience': 3,
                   'num_tries': 4}
     
-    pca_args = {'in_dim': 4000, 
-                'hidden_dim': 512, 
-                'out_dim': 1000, 
-                'depth': 4}
-    mel_args = {'mel_shape': (128, 44),
-                  'out_dim': 1000,
-                  'n_chan': 128,
-                  'tower_depth': 6,
-                  'body_type': 'linear',
-                  'body_depth': 4,
-                  'pooling_type': 'max',
-                  'pool_every': 2,
-                  'pool_size': 2,
-                  'dropout': 0.05}
     
+    # multi
+    if mode == 'multi':
+        fpn_args = {'hidden_dim': 512,
+                    'out_dim': 4000,
+                    'body_depth': 3,
+                    'dropout': 0.15}
+        pca_args = {'in_dim': 4000, 
+                    'hidden_dim': 512, 
+                    'out_dim': 4000, 
+                    'depth': 4}
+        mel_args = {'mel_shape': (128, 448),
+                    'out_dim': 4000,
+                    'n_chan': 128,
+                    'tower_depth': 8,
+                    'body_type': 'linear',
+                    'body_depth': 4,
+                    'pooling_type': 'max',
+                    'pool_every': 2,
+                    'pool_size': 2,
+                    'dropout': 0.1}
+    # cite
+    else:
+        fpn_args = {'hidden_dim': 512,
+                    'out_dim': 140,
+                    'body_depth': 4,
+                    'dropout': 0.1}
+        pca_args = {'in_dim': 4110, 
+                    'hidden_dim': 512, 
+                    'out_dim': 500, 
+                    'depth': 5}
+        mel_args = {'mel_shape': (128, 44),
+                    'out_dim': 500,
+                    'n_chan': 128,
+                    'tower_depth': 6,
+                    'body_type': 'linear',
+                    'body_depth': 4,
+                    'pooling_type': 'max',
+                    'pool_every': 2,
+                    'pool_size': 2,
+                    'dropout': 0.05}
+        
 
     # --------------------------------------------------------------------------------------------------------
 
     print('preparing datasets')
     idxs = get_train_idxs(mode)
     dataset = MegaDataset(mode, idxs)
+    # dataset2 = MegaDataset(mode, idxs)
     train_dataloader = dataset.get_dataloader('train', batch_size)
-    val_dataloader = None #dataset.get_dataloader('val', batch_size)
+    val_dataloader = None# dataset2.get_dataloader('val', batch_size)
     
     print('training')
-    model = MegaModel(model_name, hidden_dim=512, out_dim=140, body_depth=4, dropout=0.1, pca_args=pca_args, mel_args=mel_args)
+    model = MegaModel(model_name, **fpn_args, pca_args=pca_args, mel_args=mel_args)
     # model = Baby(model_name, **model_args)
     # print(model); exit(0)
     trainer = Trainer(model, train_dataloader, val_dataloader, **trainer_args)
