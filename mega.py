@@ -226,6 +226,7 @@ class MegaModel(ModelWrapper):
         h2 = self.mel_head(mel)
         cat = torch.cat((h1, h2), dim=1)
         pred = self.fpn(cat)
+        
         # loss = losses.negative_correlation_loss(pred, y)
         loss = F.mse_loss(pred, y[:, :self.out_dim])
         return loss
@@ -239,8 +240,10 @@ class MegaModel(ModelWrapper):
             h2 = self.mel_head(mel)
             cat = torch.cat((h1, h2), dim=1)
             pred = self.fpn(cat).cpu().numpy()
-            yhat = np.dot(pred, self.out_pca.components_[:self.out_dim]) + self.out_pca.mean_
-            loss = -correlation_score(yhat, y.cpu().numpy())
+            
+            pred = np.dot(pred, self.out_pca.components_[:self.out_dim]) + self.out_pca.mean_
+            loss = -correlation_score(pred, y.cpu().numpy())
+            
             # loss = F.mse_loss(pred, y[:, :self.out_dim]).item()
             error = loss
         return error, loss  
