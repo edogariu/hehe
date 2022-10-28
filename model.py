@@ -90,7 +90,7 @@ class ModelWrapper():
         if type(weight_decay) == float: weight_decay = {k: weight_decay for k in self._models.keys()}
         
         for k in self._models.keys():
-            self._optimizers[k] = optim.Adam(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
+            self._optimizers[k] = optim.SGD(self._models[k].parameters(), lr=initial_lr[k], weight_decay=weight_decay[k])
             self._lr_schedulers[k] = optim.lr_scheduler.StepLR(self._optimizers[k], step_size=lr_decay_period[k], gamma=lr_decay_gamma[k], verbose=True)
     
     def step_optimizers(self):
