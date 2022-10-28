@@ -26,16 +26,11 @@ class CiteDataset():
             which split to use. must be one of `['train', 'val', 'test', 'all']`
         """
         assert split in ['train', 'val', 'test', 'all']
-        days = [2, 3, 4, 7]
         
         inputs_file = os.path.join(TOP_DIR_NAME, 'data', 'train_cite_inputs.h5')
         assert os.path.isfile(inputs_file)
         inputs_h5 = h5py.File(inputs_file, 'r')[os.path.split(inputs_file)[1].split('.')[0]]
         
-        # prepare matching metadata, such as `day`, `donor`, `cell_type`, `technology`
-        ids = np.array(inputs_h5['axis1']).astype(str)
-        metadata = METADATA.loc[ids]
-                
         # create correct split       
         np.random.seed(0)  # to ensure same train, val, test splits every time
         self.length = len(inputs_h5['block0_values'])
@@ -45,8 +40,6 @@ class CiteDataset():
         idxs = idxs[start: stop]
         np.random.seed()  # re-random the seed
         
-        # grab only points from the given days
-        idxs = idxs[np.argwhere(np.isin(metadata['day'][idxs], days)).ravel()]  
         self.length = len(idxs)
         assert self.length != 0
                 
@@ -60,12 +53,11 @@ class CiteDataset():
         assert len(inputs_coding) == len(targets), 'inputs and targets arent same size??'
                 
         x_tensor = torch.tensor(np.concatenate((inputs_coding[idxs], inputs_pca[idxs]), axis=1))
-        day_tensor = torch.tensor([metadata.iloc[index]['day'] for index in idxs])
         y_tensor = torch.tensor(targets[idxs])
         
         del inputs_h5, inputs_coding, inputs_pca, targets
         
-        self.d = D.TensorDataset(x_tensor, day_tensor, y_tensor)
+        self.d = D.TensorDataset(x_tensor, y_tensor)
                 
     def __len__(self):
         return self.length
@@ -138,7 +130,7 @@ class CiteTwoHeads(ModelWrapper):
         self.other_head_length = other_head_length
         self.body_length = body_length
           
-        self.pca = pickle.load(open('pkls/cite_4000_pca.pkl', 'rb'))
+        # self.pca = pickle.load(open('pkls/cite_4000_pca.pkl', 'rb'))
         cite_keys = list(pd.read_hdf('data/train_cite_inputs.h5', start=0, stop=1).keys())
         self.coding_idxs = [i for i in range(len(cite_keys)) if cite_keys[i] in CITESEQ_CODING_GENES]
         self.other_idxs = [i for i in range(len(cite_keys)) if (cite_keys[i] not in CITESEQ_CODING_GENES and cite_keys[i] not in CITESEQ_CONSTANT_GENES)]
@@ -193,8 +185,7 @@ class CiteTwoHeads(ModelWrapper):
         super(CiteTwoHeads, self).__init__({'coding_head': self.coding_head, 'other_head': self.other_head, 'body': self.body}, model_name)
         
     def infer(self, 
-            x: torch.tensor, 
-            day: torch.tensor):
+            x: torch.tensor):
         with torch.no_grad():
             if x.__class__ == torch.Tensor:
                 x = x.cpu().detach().numpy()
@@ -207,7 +198,6 @@ class CiteTwoHeads(ModelWrapper):
     
     def loss(self, 
              x: torch.tensor, 
-             day: torch.tensor,
              y: torch.tensor):
         h1 = self.coding_head(x[:, :len(self.coding_idxs)])
         h2 = self.other_head(x[:, len(self.coding_idxs):])
@@ -217,7 +207,6 @@ class CiteTwoHeads(ModelWrapper):
     
     def eval_err(self, 
                  x: torch.tensor, 
-                 day: torch.tensor,
                  y: torch.tensor):
         with torch.no_grad():
             h1 = self.coding_head(x[:, :len(self.coding_idxs)])
@@ -248,7 +237,7 @@ if __name__ == '__main__':
 
     # model = CiteModel(model_name, in_dim=4110, out_dim=140, depth=8).load_checkpoint()
     model = CiteTwoHeads(model_name, in_dim=4110, out_dim=140, hidden_dim=512, 
-                        coding_head_length=6, other_head_length=4, body_length=6, body_type='linear').load_checkpoint()
+                        coding_head_length=6, other_head_length=8, body_length=8, body_type='linear')
     
     print('preparing datasets')  
     train_dataset = CiteDataset('train')

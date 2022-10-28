@@ -55,7 +55,7 @@ class Trainer():
         self.val_errors = {}
         self.best_val_loss = (0, float('inf'))  # epoch num and value of best validation loss
 
-    def train_one_epoch(self, epoch_num):
+    def train_one_epoch(self, epoch_num: int):
         self.model.train()
         print()
         print('-------------------------------------------------------------')
@@ -65,10 +65,11 @@ class Trainer():
         avg_loss = 0.
         i = 0
         pbar = tqdm.tqdm(self.train_dataloader)
-        for x, y in pbar:
+        for batch in pbar:
+            inputs, y = batch[:-1], batch[-1]
+            inputs, y = [x.to(self.device) for x in inputs], y.to(self.device)
             self.model.zero_grad()
-            x = x.to(self.device); y = y.to(self.device)
-            loss = self.model.loss(x, y)
+            loss = self.model.loss(*inputs, y)
             loss.backward()
             loss = loss.item()
             avg_loss += loss
@@ -80,7 +81,7 @@ class Trainer():
         print('avg batch training loss for epoch {}: {}'.format(epoch_num, round(avg_loss, 6)))
         self.model.step_lr_schedulers()
 
-    def eval(self, epoch_num):
+    def eval(self, epoch_num: int):
         self.model.eval()
         print()
         print('-------------------------------------------------------------')
@@ -92,9 +93,10 @@ class Trainer():
         i = 0
         with torch.no_grad():
             pbar = tqdm.tqdm(self.val_dataloader)
-            for x, y in pbar:
-                x = x.to(self.device); y = y.to(self.device)
-                err, loss = self.model.eval_err(x, y)
+            for batch in pbar:
+                inputs, y = batch[:-1], batch[-1]
+                inputs, y = [x.to(self.device) for x in inputs], y.to(self.device)
+                err, loss = self.model.eval_err(*inputs, y)
                 avg_err += err
                 avg_loss += loss
                 i += 1
@@ -111,7 +113,7 @@ class Trainer():
               num_epochs: int, 
               eval_every: int, 
               patience: int, 
-              num_tries: int,):
+              num_tries: int):
         """
         Train the model. Applies patience -- every `eval_every` epochs, we eval on validation data using a metric (corner distance) thats not the loss function. 
         We expect the model to improve in this metric as we train: if after `patience` validation steps the model has still not improved, we reset to the best previous checkpoint.
