@@ -252,7 +252,7 @@ if __name__ == '__main__':
     # ------------------------------------- hyperparameters -------------------------------------------------
 
     mode = 'multi'; assert mode in ['multi', 'cite']
-    model_name = f'mega_{mode}'
+    model_name = f'day3_mega_{mode}'
     batch_size = 128
 
     trainer_args = {'initial_lr': 0.03,
@@ -313,7 +313,7 @@ if __name__ == '__main__':
     # print(model); exit(0)
 
     print('preparing datasets')
-    idxs = get_train_idxs(mode, days=[2,])
+    idxs = get_train_idxs(mode, days=[3,])
     train_dataset = MegaDataset('train', mode, idxs)
     val_dataset = MegaDataset('val', mode, idxs)
     train_dataloader = train_dataset.get_dataloader(batch_size)
